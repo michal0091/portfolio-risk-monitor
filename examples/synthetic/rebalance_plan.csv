@@ -1,0 +1,5 @@
+fondo,nombre,peso_actual,peso_objetivo,desvio_pp,fuera_de_banda,traspaso_pp,traspaso_pp_por_tramo
+groupama,Groupama Trésorerie IC,35,50,-15,TRUE,15,7.5
+world,Fidelity MSCI World Index P Acc,30,22,8,TRUE,-8,-4
+europe,Vanguard European Stock Idx Inv,20,20,0,FALSE,0,0
+em,Fidelity MSCI EM Index P Acc,15,8,7,TRUE,-7,-3.5
