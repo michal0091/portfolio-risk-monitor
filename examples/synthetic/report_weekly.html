@@ -1,0 +1,78 @@
+<b>Monitor de riesgo · informe semanal</b> · 29/10/2026
+<i>Datos de mercado hasta el 29/10/2026</i>
+
+<b>Régimen macro</b> (10/2026): Inflación alta · Crédito tensionado
+Inflación EE. UU. +3,9 % interanual
+
+<b>Semáforo</b>  🟢 2  🟡 3  🔴 7
+Escenario más coherente: A (desinflado ordenado del ciclo IA)
+🔴 Spread high yield EE. UU.: 7,45
+🔴 Spread grado de inversión: 2,11
+🔴 Spread high yield euro: 5,82
+🔴 VIX: 38,65
+🔴 Caída del SOX desde máximo (%): 54,87
+🔴 Caída del KOSPI desde máximo (%): 35,55
+🔴 Caída BDC (crédito privado) desde máximo (%): 25,59
+🟡 Brent: 112,29
+🟡 Estrés financiero St. Louis: 1,06
+🟡 Caída CoreWeave desde máximo (%): 55,10
+🟢 Tipo real 10 años EE. UU.: 1,17
+🟢 Bono 10 años EE. UU.: 4,97
+
+<b>Cartera de fondos</b> (simulada con proxies)
+Día -0,28 % · Año +21,1 % · Caída desde máximo -2,9 %
+
+<b>Escenarios</b> (fondos objetivo · conjunto con plan)
+A: -5,6 % · -4,2 %
+B: -14,5 % · -12,5 %
+C: -20,9 % · -15,5 %
+D: +7,2 % · +5,9 %
+Esperado: -9,0 % · -7,0 %
+
+<b>Rebalanceo</b> (fondos fuera de banda)
+• Groupama Trésorerie IC: -15,0 pp → traspasar +15,0 pp
+• Fidelity MSCI World Index P Acc: +8,0 pp → traspasar -8,0 pp
+• Fidelity MSCI EM Index P Acc: +7,0 pp → traspasar -7,0 pp
+
+<b>Posiciones</b>
+Valor 12.474 € · Día +0,16 % (+20 €)
+Resultado total +5.367 € (+59,9 %)
+
+• Banco Santander: 2.401 € · día -1,06 % · mes +8,6 % · año +2,9 % · total +32,1 % (div. 65 €)
+• Microsoft: 4.390 € · día +0,05 % · mes +9,2 % · año +10,3 % · total +67,7 % (div. 139 €)
+• NVIDIA: 1.497 € · día +0,68 % · mes +2,2 % · año -15,8 % · total +191,6 % (div. 40 €)
+• iShares Core MSCI World: 4.185 € · día +0,79 % · mes -6,4 % · año +24,3 % · total +44,2 % (div. 0 €)
+
+<b>Riesgo de caída</b> (bootstrap, régimen: todos los regímenes)
+• Bolsillo entrada: P(caída &gt; 15 %) 0,7 % a 12 m · 3,9 % a 24 m · peor 5 % a 24 m -10,5 %
+• Cartera objetivo: P(caída &gt; 15 %) 1,6 % a 12 m · 7,0 % a 24 m · peor 5 % a 24 m -11,9 %
+• Cartera actual: P(caída &gt; 15 %) 5,7 % a 12 m · 17,8 % a 24 m · peor 5 % a 24 m -16,2 %
+• Ahorro general: P(caída &gt; 15 %) 11,3 % a 12 m · 28,2 % a 24 m · peor 5 % a 24 m -20,1 %
+
+<b>Alerta temprana (logit)</b>
+P(caída fuerte de la bolsa en 6 meses): 42,0 %
+Fuera de muestra: AUC 0,60 · Brier 0,162 (frecuencia histórica 0,133, 37 meses con caída)
+<i>Sin capacidad predictiva fuera de muestra: tomar solo como referencia</i>
+
+<b>CAPM frente al MSCI World</b> (36 meses)
+• Europa (proxy): beta 0,06 · alfa -2,6 % anual · R² 0,00
+• Emergentes (proxy): beta -0,10 · alfa +29,5 % anual · R² 0,01
+• Banco Santander: beta 0,17 · alfa -8,0 % anual · R² 0,02
+• Microsoft: beta 0,20 · alfa +3,3 % anual · R² 0,02
+• NVIDIA: beta 0,06 · alfa +9,0 % anual · R² 0,00
+• iShares Core MSCI World: beta -0,03 · alfa +5,2 % anual · R² 0,00
+
+<b>Volatilidad (GARCH)</b>
+• Cartera actual: 6,9 % anual (percentil 17) · VaR 95 % 1 día 0,69 % · 10 días 2,0 %
+• Cartera objetivo: 5,4 % anual (percentil 22) · VaR 95 % 1 día 0,54 % · 10 días 1,6 %
+• Banco Santander: 25,2 % anual (percentil 88) · VaR 95 % 1 día 2,62 % · 10 días 8,3 %
+• Microsoft: 24,8 % anual (percentil 15) · VaR 95 % 1 día 2,54 % · 10 días 8,1 %
+• NVIDIA: 25,8 % anual (percentil 30) · VaR 95 % 1 día 2,62 % · 10 días 7,9 %
+• iShares Core MSCI World: 25,5 % anual (percentil 16) · VaR 95 % 1 día 2,62 % · 10 días 8,1 %
+
+[gráfico] Semáforo: output/signals.png
+[gráfico] Cartera de fondos: output/portfolio.png
+[gráfico] Posiciones: output/positions.png
+[gráfico] Escenarios: output/scenarios.png
+[gráfico] Riesgo de caída (bootstrap): output/bootstrap.png
+[gráfico] Volatilidad (GARCH): output/garch.png

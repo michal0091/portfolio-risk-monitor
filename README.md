@@ -112,6 +112,7 @@ src/05_signals.R             semáforo de alertas y lectura heurística de escen
 src/06_rebalance.R           traspasos al objetivo, senda de la entrada, router de aportaciones
 src/07_plots.R               gráficos ggplot2
 src/08_positions.R           posiciones con fecha de compra: precios, splits, divisas y dividendos
+src/09_forecast.R            bootstrap por régimen, logit de alerta temprana, CAPM y GARCH
 src/10_report.R              textos del informe de Telegram (HTML)
 src/11_telegram.R            envío a Telegram con httr2 (o modo de prueba)
 src/12_pipeline.R            run_pipeline(): el pipeline completo, usado por main.R y report.R
@@ -128,6 +129,10 @@ main.R                       punto de entrada
 | `scenarios.csv`, `scenarios.png` | pérdidas por escenario: actual, objetivo, plan y conjunto |
 | `equity_share_grid.csv` | pérdida por escenario según el % en bolsa (control de la tolerancia −15 %) |
 | `historical_stress.csv` | comportamiento de cada proxy en 2000-02, 2007-09, 2020 y 2022 |
+| `bootstrap.csv`, `bootstrap_fan.csv`, `bootstrap.png` | bootstrap por régimen: P(caída > 15 %) a 6, 12 y 24 meses y abanico de rentabilidad por cartera y bolsillo |
+| `early_warning.csv`, `early_warning_coefs.csv`, `early_warning_series.csv` | logit de alerta temprana: probabilidad actual, coeficientes y validación fuera de muestra (AUC, Brier) |
+| `capm.csv` | CAPM a 36 meses frente al MSCI World: alfa, beta, R² y volatilidad de fondos y posiciones |
+| `garch.csv`, `garch_vol.csv`, `garch.png` | GJR-GARCH(1,1) con t de Student: volatilidad condicional, su percentil, VaR y ES a 1 y 10 días |
 | `positions_summary.csv`, `positions_history.csv`, `dividends.csv`, `positions.png` | posiciones seguidas: valor, coste, plusvalía latente y realizada, dividendos, variación del día, del mes y del año |
 | `portfolio_history.csv`, `portfolio.png` | evolución simulada de la cartera actual y objetivo (proxies, rebalanceo trimestral por defecto: `rebalance: frequency_months` en `cfg/portfolio.yaml`) y caída desde máximo |
 | `regimes_monthly.csv`, `regimes.png` | régimen mensual inflación × crédito |
@@ -152,17 +157,18 @@ Los CDS de CoreWeave u Oracle no están en Yahoo ni en FRED. Se aproximan con sp
 Ordenado de menor a mayor esfuerzo:
 
 1. **Calibrar los escenarios con datos.** Sustituir las rentabilidades supuestas de `cfg/config.yaml` por la rentabilidad condicionada de cada proxy en `regime_performance.csv`.
-2. **Bootstrap por régimen** (`boot`). Simular trayectorias de 24 meses remuestreando bloques del régimen actual para estimar P(caída > 15 %) de la cartera objetivo y de cada bolsillo.
-3. **Early warning con logit o probit.** P(drawdown > 15 % en los próximos 6 meses) en función de los spreads HY/IG, la pendiente 10a–2a, el tipo real, la caída del SOX y el precio de los BDC. Validar fuera de muestra (AUC, Brier) con ventana expansiva.
+2. ~~**Bootstrap por régimen.**~~ Hecho (`regime_bootstrap()`): bloques de 6 meses del régimen actual, 10.000 trayectorias a 24 meses, P(caída > 15 %) de cada cartera y bolsillo.
+3. ~~**Early warning con logit.**~~ Hecho (`early_warning()`): P(caída > 15 % del S&P 500 en 6 meses) con el diferencial Baa, la pendiente 10a–2a, el tipo real, el VIX y el SOX, validado con ventana expansiva. Resultado a oct 2026: sin capacidad predictiva fuera de muestra (AUC 0,39, Brier peor que la frecuencia histórica); queda como referencia y como punto de partida para mejorar las variables.
 4. **Regímenes latentes.** Cambiar los umbrales fijos por un modelo de Markov (`MSwM`, `depmixS4`) sobre rentabilidades, spreads e inflación, y comparar sus probabilidades con el semáforo.
 5. **Ciclo de crédito con filtros macro.** Extraer el componente cíclico de los spreads y de la inflación con el filtro MBH (paquete `MacroFilters`) y usarlo como definición de régimen alternativa a la mediana móvil.
 6. **Regresión cuantílica** (`quantreg`) de la rentabilidad a 12 meses sobre el CAPE, el tipo real y los spreads, para obtener percentiles de cola en lugar de medias.
-7. **Producto.** Informe Quarto mensual o app Shiny, con ejecución programada (GitHub Actions o cron) que envíe el semáforo por correo.
+7. ~~**Producto.**~~ Hecho en parte: informe diario y semanal por Telegram con GitHub Actions (`report.R`). Pendiente: informe Quarto o app Shiny.
+8. **Mejorar el modelo de alerta temprana:** probit, variables de crédito privado (BDC) y de valoración, horizonte y umbral alternativos, y comparación con los regímenes de Markov.
 
 ## 4. Para el portfolio de proyectos
 
 - Muestra un pipeline reproducible: configuración en YAML, código modular, caché de datos y modo sintético para que cualquiera lo ejecute sin claves ni datos personales.
 - Publicar solo `cfg/portfolio.example.yaml` con pesos de ejemplo. `cfg/portfolio.yaml` y `data/` están en `.gitignore`.
-- Los puntos 2 a 5 de la hoja de ruta son los que más valor añaden como caso de estudio: regímenes, probabilidad de cola y validación fuera de muestra.
+- Los puntos 2 a 5 de la hoja de ruta son los que más valor añaden como caso de estudio: regímenes, probabilidad de cola y validación fuera de muestra. `examples/synthetic/report_weekly.html` muestra el informe semanal con datos simulados.
 
 *No es asesoramiento financiero. Escenarios y probabilidades son supuestos del autor.*

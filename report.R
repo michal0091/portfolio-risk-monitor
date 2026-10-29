@@ -30,7 +30,8 @@ ensure_dirs(cfg)
 state <- file.path(cfg$project$output, "state")
 dir.create(state, showWarnings = FALSE)
 
-r <- run_pipeline(cfg, pf, pos, charts = kind == "weekly")
+r <- run_pipeline(cfg, pf, pos, charts = kind == "weekly",
+                  forecast = if (kind == "weekly") "full" else "daily")
 
 read_state <- function(name) {
   f <- file.path(state, name)
@@ -47,7 +48,9 @@ photos <- if (kind == "weekly") c(
   "Semáforo" = file.path(out, "signals.png"),
   "Cartera de fondos" = file.path(out, "portfolio.png"),
   "Posiciones" = file.path(out, "positions.png"),
-  "Escenarios" = file.path(out, "scenarios.png")) else character()
+  "Escenarios" = file.path(out, "scenarios.png"),
+  "Riesgo de caída (bootstrap)" = file.path(out, "bootstrap.png"),
+  "Volatilidad (GARCH)" = file.path(out, "garch.png")) else character()
 send_report(text, kind, cfg, photos, dry_run)
 
 # State for the next run (written only after the report went out or was saved)

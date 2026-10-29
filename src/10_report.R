@@ -13,6 +13,7 @@ fmt_num <- function(x, digits = 0) {
                                 decimal.mark = ","))
 }
 fmt_signed <- function(x, digits = 1, suffix = " %") {
+  x <- round(x, digits) + 0                           # + 0 turns -0 into 0
   ifelse(is.na(x), "-", paste0(ifelse(x > 0, "+", ""), fmt_num(x, digits), suffix))
 }
 fmt_eur <- function(x, signed = FALSE) {
@@ -128,10 +129,52 @@ section_rebalance <- function(r) {
                  " → traspasar ", fmt_signed(reb$traspaso_pp, 1, " pp"))), collapse = "\n")
 }
 
+section_garch <- function(r, full = FALSE) {
+  g <- r$forecast$garch$table
+  if (is.null(g) || !nrow(g)) return(NULL)
+  if (!full) g <- g[serie == "Cartera actual"]
+  if (!nrow(g)) return(NULL)
+  paste(c("<b>Volatilidad (GARCH)</b>",
+          paste0("• ", html_escape(g$serie), ": ", fmt_num(g$vol_anual_pct, 1), " % anual (percentil ",
+                 fmt_num(g$percentil_vol), ") · VaR 95 % 1 día ", fmt_num(g$var95_1d_pct, 2),
+                 " % · 10 días ", fmt_num(g$var95_10d_pct, 1), " %")), collapse = "\n")
+}
+
+section_bootstrap <- function(r) {
+  b <- r$forecast$bootstrap
+  if (is.null(b)) return(NULL)
+  s <- b$summary[horizonte_meses %in% c(12, 24)]
+  s <- data.table::dcast(s, cartera ~ horizonte_meses, value.var = c("prob_caida", "rentab_p05"))
+  s <- s[order(prob_caida_24)]                        # from lower to higher risk
+  paste(c(paste0("<b>Riesgo de caída</b> (bootstrap, régimen: ", html_escape(b$regime), ")"),
+          paste0("• ", html_escape(s$cartera), ": P(caída &gt; ", r$forecast_loss, " %) ",
+                 fmt_num(s$prob_caida_12, 1), " % a 12 m · ", fmt_num(s$prob_caida_24, 1),
+                 " % a 24 m · peor 5 % a 24 m ", fmt_signed(s$rentab_p05_24))), collapse = "\n")
+}
+
+section_logit <- function(r) {
+  m <- r$forecast$logit$metrics
+  if (is.null(m)) return(NULL)
+  useful <- !is.na(m$auc_oos) && m$auc_oos > .6 && m$brier_oos < m$brier_clima
+  paste0("<b>Alerta temprana (logit)</b>\nP(caída fuerte de la bolsa en 6 meses): ",
+         fmt_num(m$prob_actual, 1), " %\nFuera de muestra: AUC ", fmt_num(m$auc_oos, 2),
+         " · Brier ", fmt_num(m$brier_oos, 3), " (frecuencia histórica ", fmt_num(m$brier_clima, 3),
+         ", ", m$eventos_oos, " meses con caída)",
+         if (!useful) "\n<i>Sin capacidad predictiva fuera de muestra: tomar solo como referencia</i>" else "")
+}
+
+section_capm <- function(r) {
+  c <- r$forecast$capm
+  if (is.null(c) || !nrow(c)) return(NULL)
+  paste(c("<b>CAPM frente al MSCI World</b> (36 meses)",
+          paste0("• ", html_escape(c$nombre), ": beta ", fmt_num(c$beta, 2), " · alfa ",
+                 fmt_signed(c$alfa_anual_pct), " anual · R² ", fmt_num(c$r2, 2))), collapse = "\n")
+}
+
 build_daily_report <- function(r, prev_signals = NULL, new_divs = NULL) {
   parts <- c(report_header("Monitor de riesgo · resumen diario", r),
              section_stale(r), section_signals(r, prev_signals), section_funds(r),
-             section_positions(r), section_dividends(new_divs), r$extra_daily)
+             section_positions(r), section_dividends(new_divs), section_garch(r))
   paste(parts[!is.na(parts) & nzchar(parts)], collapse = "\n\n")
 }
 
@@ -139,7 +182,8 @@ build_weekly_report <- function(r, prev_signals = NULL, new_divs = NULL) {
   parts <- c(report_header("Monitor de riesgo · informe semanal", r),
              section_stale(r), section_regime(r), section_signals(r, prev_signals, full = TRUE),
              section_funds(r), section_scenarios(r), section_rebalance(r),
-             section_positions(r, full = TRUE), section_dividends(new_divs), r$extra_weekly)
+             section_positions(r, full = TRUE), section_dividends(new_divs),
+             section_bootstrap(r), section_logit(r), section_capm(r), section_garch(r, full = TRUE))
   paste(parts[!is.na(parts) & nzchar(parts)], collapse = "\n\n")
 }
 
