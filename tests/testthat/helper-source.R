@@ -1,0 +1,5 @@
+# Load the project modules the same way main.R does (test_dir runs from this folder)
+root <- normalizePath(file.path("..", ".."))
+for (f in sort(list.files(file.path(root, "src"), pattern = "\\.R$", full.names = TRUE))) source(f)
+cfg <- read_cfg(file.path(root, "cfg", "config.yaml"))
+pf  <- read_portfolio(file.path(root, "cfg", "portfolio.example.yaml"))
