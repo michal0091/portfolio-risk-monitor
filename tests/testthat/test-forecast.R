@@ -88,3 +88,10 @@ test_that("garch_one reports half-life and last-week volatility", {
   expect_true(g$media_vida_dias > 0)
   expect_true(is.finite(g$vol_hace_1s_pct))
 })
+
+test_that("garch long-run volatility is close to the simulated one", {
+  set.seed(21)
+  g <- garch_one(100 * exp(cumsum(rnorm(2500, 0, .01))), "x", cfg)$table
+  if (is.finite(g$vol_largo_plazo_pct)) expect_equal(g$vol_largo_plazo_pct, 100 * .01 * sqrt(252), tolerance = .3)
+  expect_true(g$vol_largo_plazo_pct > 0 || is.na(g$vol_largo_plazo_pct))
+})

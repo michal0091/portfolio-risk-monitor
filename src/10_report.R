@@ -302,18 +302,44 @@ section_garch <- function(r, full = FALSE) {
   g[, serie := data.table::fcase(
     id == "Cartera actual", "Cartera de fondos (actual)",
     id == "Cartera objetivo", "Cartera de fondos (objetivo)", default = serie)]
-  if (!full) g <- g[id %in% c("Cartera actual", "posiciones")]
+  world <- g[id == "ref_world", vol_anual_pct]
+  spx <- g[id == "ref_spx"]
+  g <- g[id != "ref_spx"]
+  keep <- if (full) g$id else c("ref_world", "Cartera actual", "posiciones")
+  g <- g[id %in% keep][order(match(id, c("ref_world", "Cartera actual", "Cartera objetivo", "posiciones")))]
   if (!nrow(g)) return(NULL)
+  # Reference levels: the model's long-run volatility (unstable when shocks barely decay,
+  # so hidden beyond a one-year half-life) and the MSCI World multiple
+  g[media_vida_dias > 250, vol_largo_plazo_pct := NA_real_]
+  ref_txt <- paste0(" (normal ", fmt_num(g$vol_largo_plazo_pct, 1), " %",
+                    if (length(world)) ifelse(g$id == "ref_world", "",
+                                              paste0(", ", fmt_num(g$vol_anual_pct / world, 1), "× MSCI World")) else "",
+                    ")")
+  ref_txt[is.na(g$vol_largo_plazo_pct)] <- if (length(world)) ifelse(g$id[is.na(g$vol_largo_plazo_pct)] == "ref_world", "",
+    paste0(" (", fmt_num(g$vol_anual_pct[is.na(g$vol_largo_plazo_pct)] / world, 1), "× MSCI World)")) else ""
   var_txt <- ifelse(is.na(g$valor), paste0(fmt_num(g$var95_1d_pct, 2), " %"),
                     paste0("≈ ", fmt_eur(g$valor * g$var95_1d_pct / 100), " (", fmt_num(g$var95_1d_pct, 2), " %)"))
-  lines <- paste0("• ", html_escape(g$serie), ": ", fmt_num(g$vol_anual_pct, 1), " % anual ",
+  lines <- paste0("• ", html_escape(g$serie), ": ", fmt_num(g$vol_anual_pct, 1), " % anual", ref_txt, " ",
                   fmt_delta(g$vol_anual_pct - g$vol_hace_1s_pct, 1), " en la semana (percentil ",
                   fmt_num(g$percentil_vol), ") · VaR 95 % 1 día ", var_txt,
                   " · 10 días ", fmt_num(g$var95_10d_pct, 1), " %")
-  if (full) lines <- paste0(lines, "\n   ES 95 % 1 día ", fmt_num(g$es95_1d_pct, 2), " % · un shock se reduce a la mitad en ",
+  if (full) lines <- paste0(lines, "\n   ES 95 % 1 día ",
+                            ifelse(is.na(g$valor), paste0(fmt_num(g$es95_1d_pct, 2), " %"),
+                                   paste0("≈ ", fmt_eur(g$valor * g$es95_1d_pct / 100), " (", fmt_num(g$es95_1d_pct, 2), " %)")),
+                            " · un shock se reduce a la mitad en ",
                             ifelse(g$media_vida_dias <= 250, paste0("~", fmt_num(g$media_vida_dias), " días"),
                                    "más de un año (volatilidad muy persistente)"))
   out <- c("<b>Volatilidad (GARCH)</b>", lines)
+  # Implied (VIX) versus model volatility of the S&P 500
+  vix <- r$daily[id == "vix" & !is.na(value)][order(date)]
+  if (full && nrow(spx) && nrow(vix)) {
+    gap <- data.table::last(vix$value) - spx$vol_anual_pct
+    out <- c(out, paste0("VIX ", fmt_num(data.table::last(vix$value), 1), " frente a GARCH del S&P 500 ",
+                         fmt_num(spx$vol_anual_pct, 1), " %: ", fmt_delta(gap, 1), " puntos, ",
+                         if (gap > 6) "el mercado paga mucha más protección de la que justifican los precios (miedo anticipado)"
+                         else if (gap < 0) "el mercado espera menos agitación de la que muestran los precios (complacencia)"
+                         else "prima habitual (el VIX suele ir 3-4 puntos por encima)"))
+  }
   rc <- r$forecast$risk
   if (full && !is.null(rc) && nrow(rc)) out <- c(out, paste0(
     "Aporte al riesgo de tus posiciones: ",

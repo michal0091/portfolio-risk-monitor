@@ -188,6 +188,8 @@ garch_one <- function(price, label, cfg) {
     var99_1d_pct = v99[["var"]], es99_1d_pct = v99[["es"]], var95_10d_pct = v95_10[["var"]],
     persistencia = pers,
     media_vida_dias = if (pers < 1) log(.5) / log(pers) else Inf,   # days for a shock to halve
+    # long-run level the conditional volatility reverts to: omega / (1 - persistence)
+    vol_largo_plazo_pct = if (pers < 1) sqrt(rugarch::coef(fit)[["omega"]] / (1 - pers) * 252) else NA_real_,
     vol_hace_1s_pct = hist_sig[max(1, length(hist_sig) - 4)] * sqrt(252),   # 5 sessions earlier
     # last daily move in conditional standard deviations (sigma known before that day)
     ret_ultimo_pct = r[length(r)],
@@ -197,11 +199,13 @@ garch_one <- function(price, label, cfg) {
                                  vol_anual_pct = hist_sig * sqrt(252)))
 }
 
-# Fund portfolios, today's positions as a whole and each position (full price history)
-garch_table <- function(ph, prices, pos_sum, cfg) {
+# Fund portfolios, today's positions as a whole, each position (full price history) and
+# reference indices (refs: named list id -> list(label, date, price))
+garch_table <- function(ph, prices, pos_sum, cfg, refs = list()) {
   jobs <- list()
   add <- function(label, id, date, price) jobs[[length(jobs) + 1]] <<- list(label = label, id = id,
                                                                            date = date, price = price)
+  for (rid in names(refs)) add(refs[[rid]]$label, rid, refs[[rid]]$date, refs[[rid]]$price)
   for (cart in unique(ph$cartera)) { x <- ph[cartera == cart][order(date)]; add(cart, cart, x$date, x$valor) }
   if (!is.null(pos_sum) && nrow(pos_sum)) {
     idx <- positions_index(prices, pos_sum)
@@ -245,7 +249,14 @@ risk_contribution <- function(prices, pos_sum, cfg) {
 # level "daily": GARCH only (portfolios and positions, a few seconds); "full": everything.
 # prices: full price history of the positions (position_prices); pos_sum: position_summary
 run_forecasts <- function(daily, w, ph, prices, pos_sum, cfg, pf, level = "full") {
-  out <- list(garch = garch_table(ph, prices, pos_sum, cfg))   # positions too: daily move alerts
+  ref <- function(sid, label) {
+    x <- daily[id == sid & !is.na(value)][order(date)]
+    if (nrow(x)) list(label = label, date = x$date, price = x$value) else NULL
+  }
+  refs <- list(ref_world = ref("world", "MSCI World (referencia)"))
+  if (level == "full") refs$ref_spx <- ref("spx", "S&P 500 (referencia)")   # versus VIX, weekly only
+  refs <- refs[!sapply(refs, is.null)]
+  out <- list(garch = garch_table(ph, prices, pos_sum, cfg, refs))   # positions too: daily move alerts
   if (level == "full") {
     pr <- portfolio_monthly_returns(fund_monthly_returns(w, cfg), pf)
     out$bootstrap <- regime_bootstrap(pr, cfg)
