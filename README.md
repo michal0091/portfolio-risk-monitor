@@ -57,11 +57,46 @@ Rscript main.R              # datos reales (Yahoo + FRED)
 Rscript main.R synthetic    # demo offline con datos simulados
 ```
 
-Dependencias: `data.table`, `zoo`, `xts`, `quantmod`, `yaml`, `ggplot2`, `scales`.
+Dependencias (en `DESCRIPTION`): `data.table`, `zoo`, `xts`, `quantmod`, `yaml`, `ggplot2`, `scales`, `httr2`, `curl` y `rugarch`; `testthat` para los tests.
 
 Para obtener los traspasos en euros, rellena `values_eur` en `cfg/portfolio.yaml`. Si no, el cálculo se hace en puntos porcentuales.
 
 **Posiciones seguidas** (`cfg/positions.yaml`): cada valor lleva su ticker de Yahoo, su divisa, la retención sobre dividendos y una lista de compras (`date`, `shares`, `price`, `fees`); una venta es una compra con títulos negativos. El monitor convierte todo a euros con los tipos de Yahoo, ajusta las compras por splits y calcula la plusvalía latente y realizada (coste medio) y los dividendos cobrados (títulos en cartera el día anterior a la fecha ex-dividendo, netos de retención).
+
+### Informe en Telegram
+
+`report.R` genera un resumen y lo envía a Telegram:
+
+```bash
+Rscript report.R daily --dry-run     # resumen diario, guardado en output/report_daily.html sin enviar
+Rscript report.R weekly --dry-run    # informe semanal con gráficos
+```
+
+- **Resumen diario:** semáforo y cambios desde el último informe, cartera de fondos, posiciones y dividendos nuevos.
+- **Informe semanal:** añade el régimen, los escenarios, el rebalanceo, el detalle de cada posición y los gráficos.
+
+Sin credenciales, o con `--dry-run`, no se envía nada.
+
+**Envío automático con GitHub Actions** (`.github/workflows/report.yml`): laborables a las 18:30 y domingos a las 10:00, hora de Madrid. Para activarlo:
+
+1. Crea un bot con [@BotFather](https://t.me/BotFather) y guarda el token. Escríbele un mensaje al bot y obtén tu `chat_id` en `https://api.telegram.org/bot<TOKEN>/getUpdates`.
+2. Guarda los secretos en el repo (con `gh` o en *Settings → Secrets and variables → Actions*):
+
+   ```bash
+   gh secret set TELEGRAM_BOT_TOKEN
+   gh secret set TELEGRAM_CHAT_ID
+   gh secret set PORTFOLIO_YAML_B64 --body "$(base64 -w0 cfg/portfolio.yaml)"
+   gh secret set POSITIONS_YAML_B64 --body "$(base64 -w0 cfg/positions.yaml)"
+   gh secret set CACHE_PASSPHRASE --body "$(openssl rand -base64 32)"
+   ```
+
+3. Lanza una prueba en *Actions → Telegram report → Run workflow*.
+
+**Privacidad en un repo público:**
+- Los datos personales solo entran como secretos y nunca se escriben en el log, que muestra las series de las posiciones como `private series`.
+- No se suben artefactos.
+- La caché de datos se guarda en dos partes: las series de mercado en claro y las de tus posiciones cifradas con `CACHE_PASSPHRASE`.
+- Si cambias `cfg/portfolio.yaml` o `cfg/positions.yaml`, vuelve a guardar su secreto.
 
 ### Estructura
 
@@ -77,6 +112,10 @@ src/05_signals.R             semáforo de alertas y lectura heurística de escen
 src/06_rebalance.R           traspasos al objetivo, senda de la entrada, router de aportaciones
 src/07_plots.R               gráficos ggplot2
 src/08_positions.R           posiciones con fecha de compra: precios, splits, divisas y dividendos
+src/10_report.R              textos del informe de Telegram (HTML)
+src/11_telegram.R            envío a Telegram con httr2 (o modo de prueba)
+src/12_pipeline.R            run_pipeline(): el pipeline completo, usado por main.R y report.R
+report.R                     informe diario o semanal: Rscript report.R daily|weekly [--dry-run]
 main.R                       punto de entrada
 ```
 

@@ -1,0 +1,134 @@
+# Telegram report: weekdays 18:30 and Sundays 10:00, Europe/Madrid.
+# Cron runs in UTC, so each report has a summer and a winter cron; report.R only sends
+# when the cron that fired matches the Madrid time of that day.
+# Personal data comes from secrets and never reaches the logs or any artifact.
+name: Telegram report
+
+on:
+  schedule:
+    - cron: "30 16 * * 1-5"   # 18:30 Madrid in summer (UTC+2)
+    - cron: "30 17 * * 1-5"   # 18:30 Madrid in winter (UTC+1)
+    - cron: "0 8 * * 0"       # 10:00 Madrid in summer
+    - cron: "0 9 * * 0"       # 10:00 Madrid in winter
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: "Report"
+        type: choice
+        options: [daily, weekly]
+        default: daily
+      dry_run:
+        description: "Dry run (build the report but do not send it)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: write   # re-enable this workflow so GitHub does not disable it after 60 idle days
+
+concurrency:
+  group: telegram-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      LANG: C.UTF-8
+      EVENT_NAME: ${{ github.event_name }}
+      EVENT_SCHEDULE: ${{ github.event.schedule }}
+      INPUT_KIND: ${{ inputs.kind }}
+      INPUT_DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache: true
+
+      - name: Choose report
+        id: kind
+        run: |
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            case "$EVENT_SCHEDULE" in
+              *1-5) echo "kind=daily" >> "$GITHUB_OUTPUT" ;;
+              *)    echo "kind=weekly" >> "$GITHUB_OUTPUT" ;;
+            esac
+            echo "cron=$EVENT_SCHEDULE" >> "$GITHUB_OUTPUT"
+          else
+            echo "kind=$INPUT_KIND" >> "$GITHUB_OUTPUT"
+            echo "cron=" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Data cache: keeps the accumulated history of data/raw between runs. In a public
+      # repo a pull request from a fork can restore caches, so the personal part (prices of
+      # tracked positions, report state) is only cached encrypted with CACHE_PASSPHRASE.
+      - name: Restore data cache
+        uses: actions/cache/restore@v4
+        with:
+          path: cache
+          key: data-${{ github.run_id }}
+          restore-keys: data-
+
+      - name: Unpack data cache
+        env:
+          CACHE_PASSPHRASE: ${{ secrets.CACHE_PASSPHRASE }}
+        run: |
+          mkdir -p data/raw output/state
+          if [ -f cache/public.tar.gz ]; then tar -xzf cache/public.tar.gz; fi
+          if [ -f cache/private.tar.gz.enc ] && [ -n "$CACHE_PASSPHRASE" ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -pass env:CACHE_PASSPHRASE \
+              -in cache/private.tar.gz.enc | tar -xz
+          fi
+
+      - name: Personal configuration from secrets
+        env:
+          PORTFOLIO_YAML_B64: ${{ secrets.PORTFOLIO_YAML_B64 }}
+          POSITIONS_YAML_B64: ${{ secrets.POSITIONS_YAML_B64 }}
+        run: |
+          if [ -n "$PORTFOLIO_YAML_B64" ]; then echo "$PORTFOLIO_YAML_B64" | base64 -d > cfg/portfolio.yaml; fi
+          if [ -n "$POSITIONS_YAML_B64" ]; then echo "$POSITIONS_YAML_B64" | base64 -d > cfg/positions.yaml; fi
+
+      - name: Build and send report
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          KIND: ${{ steps.kind.outputs.kind }}
+          CRON: ${{ steps.kind.outputs.cron }}
+        run: |
+          DRY=""
+          if [ "$INPUT_DRY_RUN" = "true" ]; then DRY="--dry-run"; fi
+          Rscript report.R "$KIND" --cron "$CRON" $DRY
+
+      - name: Pack data cache
+        if: always()
+        env:
+          CACHE_PASSPHRASE: ${{ secrets.CACHE_PASSPHRASE }}
+        run: |
+          mkdir -p cache && rm -f cache/*
+          # public series: everything in data/raw except tracked positions and their FX
+          # public: market series and the traffic-light state (no tracked positions or FX)
+          { find data/raw -name '*.csv' ! -name 'px_*' ! -name 'div_*' ! -name 'spl_*' ! -name 'fx_*';
+            find output/state -name 'signals_prev.csv'; } | tar -czf cache/public.tar.gz -T -
+          if [ -n "$CACHE_PASSPHRASE" ]; then
+            find data/raw output/state \( -name 'px_*' -o -name 'div_*' -o -name 'spl_*' -o -name 'fx_*' -o -name 'dividends_seen.csv' \) -type f \
+              | tar -cz -T - | openssl enc -aes-256-cbc -pbkdf2 -pass env:CACHE_PASSPHRASE -out cache/private.tar.gz.enc
+          fi
+
+      - name: Save data cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: cache
+          key: data-${{ github.run_id }}
+
+      - name: Keep the schedule alive
+        if: steps.kind.outputs.kind == 'weekly'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/report.yml/enable"

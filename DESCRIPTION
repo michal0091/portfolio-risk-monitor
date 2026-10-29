@@ -1,0 +1,21 @@
+Type: Project
+Package: portfolioriskmonitor
+Title: Portfolio Risk Monitor
+Version: 0.2.0
+Description: Risk monitor for an index fund portfolio and tracked positions: macro
+    regimes, early-warning signals, stress tests, rebalancing and Telegram reports.
+    Not an installable package; this file lists the dependencies for GitHub Actions.
+Imports:
+    data.table,
+    zoo,
+    xts,
+    quantmod,
+    yaml,
+    ggplot2,
+    scales,
+    httr2,
+    curl,
+    rugarch
+Suggests:
+    testthat
+Encoding: UTF-8
