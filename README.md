@@ -52,6 +52,7 @@ Descarga datos de mercado (Yahoo Finance) y macro/crédito (FRED) con `quantmod`
 
 ```bash
 cp cfg/portfolio.example.yaml cfg/portfolio.yaml   # tus pesos (git-ignored)
+cp cfg/positions.example.yaml cfg/positions.yaml   # tus acciones y valores (git-ignored)
 Rscript main.R              # datos reales (Yahoo + FRED)
 Rscript main.R synthetic    # demo offline con datos simulados
 ```
@@ -59,6 +60,8 @@ Rscript main.R synthetic    # demo offline con datos simulados
 Dependencias: `data.table`, `zoo`, `xts`, `quantmod`, `yaml`, `ggplot2`, `scales`.
 
 Para obtener los traspasos en euros, rellena `values_eur` en `cfg/portfolio.yaml`. Si no, el cálculo se hace en puntos porcentuales.
+
+**Posiciones seguidas** (`cfg/positions.yaml`): cada valor lleva su ticker de Yahoo, su divisa, la retención sobre dividendos y una lista de compras (`date`, `shares`, `price`, `fees`); una venta es una compra con títulos negativos. El monitor convierte todo a euros con los tipos de Yahoo, ajusta las compras por splits y calcula la plusvalía latente y realizada (coste medio) y los dividendos cobrados (títulos en cartera el día anterior a la fecha ex-dividendo, netos de retención).
 
 ### Estructura
 
@@ -73,6 +76,7 @@ src/04_stress.R              escenarios, rejilla por % de bolsa, stress históri
 src/05_signals.R             semáforo de alertas y lectura heurística de escenario
 src/06_rebalance.R           traspasos al objetivo, senda de la entrada, router de aportaciones
 src/07_plots.R               gráficos ggplot2
+src/08_positions.R           posiciones con fecha de compra: precios, splits, divisas y dividendos
 main.R                       punto de entrada
 ```
 
@@ -85,6 +89,7 @@ main.R                       punto de entrada
 | `scenarios.csv`, `scenarios.png` | pérdidas por escenario: actual, objetivo, plan y conjunto |
 | `equity_share_grid.csv` | pérdida por escenario según el % en bolsa (control de la tolerancia −15 %) |
 | `historical_stress.csv` | comportamiento de cada proxy en 2000-02, 2007-09, 2020 y 2022 |
+| `positions_summary.csv`, `positions_history.csv`, `dividends.csv`, `positions.png` | posiciones seguidas: valor, coste, plusvalía latente y realizada, dividendos, variación del día, del mes y del año |
 | `portfolio_history.csv`, `portfolio.png` | evolución simulada de la cartera actual y objetivo (proxies, rebalanceo trimestral por defecto: `rebalance: frequency_months` en `cfg/portfolio.yaml`) y caída desde máximo |
 | `regimes_monthly.csv`, `regimes.png` | régimen mensual inflación × crédito |
 | `regime_performance.csv`, `regime_transitions.csv` | rentabilidad condicionada y matriz de transición |

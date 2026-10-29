@@ -66,3 +66,26 @@ synthetic_daily <- function(cfg, seed = 42) {
                      data.table::data.table(date = months, id = "ea_hicp", value = hicp)))
   data.table::rbindlist(out)[!is.na(value)]
 }
+
+# Synthetic prices, quarterly dividends and FX for tracked positions (same ids as
+# download_positions). Prices start at the first lot price; no splits.
+synthetic_positions <- function(positions, seed = 7) {
+  set.seed(seed)
+  from <- min(as.Date(unlist(lapply(positions, function(p) sapply(p$lots, `[[`, "date"))))) - 10
+  dates <- seq(from, Sys.Date(), by = "day")
+  dates <- dates[!format(dates, "%u") %in% c("6", "7")]
+  n <- length(dates)
+  out <- lapply(positions, function(p) {
+    p0 <- p$lots[[1]]$price
+    px <- p0 * exp(cumsum(rnorm(n, .08 / 252, .25 / sqrt(252))))
+    q  <- dates[format(dates, "%m-%d") %in% c("03-15", "06-15", "09-15", "12-15")]
+    dv <- if (identical(p$type, "stock")) px[match(q, dates)] * .005 else numeric()
+    list(data.table::data.table(date = dates, id = paste0("px_", p$id), value = px),
+         data.table::data.table(date = q[seq_along(dv)], id = rep(paste0("div_", p$id), length(dv)),
+                                value = dv))
+  })
+  ccys <- setdiff(unique(sapply(positions, function(p) quote_ccy(p$currency))), "EUR")
+  fx <- lapply(ccys, function(cc) data.table::data.table(
+    date = dates, id = paste0("fx_", cc), value = 1.10 * exp(cumsum(rnorm(n, 0, .005)))))
+  data.table::rbindlist(c(unlist(out, recursive = FALSE), fx))
+}

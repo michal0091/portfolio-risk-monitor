@@ -54,10 +54,20 @@ reb <- rebalance_plan(pf)
 fwrite(reb, file.path(out, "rebalance_plan.csv"))
 fwrite(glide_path(pf), file.path(out, "glide_path.csv"))
 
+# 5b. Tracked positions --------------------------------------------------------------
+pos <- read_positions()
+pdata <- if (isTRUE(cfg$project$use_synthetic)) synthetic_positions(pos) else download_positions(pos, cfg)
+pos_hist <- position_history(pos, pdata)
+pos_sum  <- position_summary(pos, pdata, pos_hist)
+fwrite(pos_hist, file.path(out, "positions_history.csv"))
+fwrite(pos_sum, file.path(out, "positions_summary.csv"))
+fwrite(dividends_received(pos, pdata), file.path(out, "dividends.csv"))
+
 # 6. Charts -------------------------------------------------------------------------
 invisible(plot_signals(daily, cfg, file = file.path(out, "signals.png")))
 invisible(plot_regimes(w, file = file.path(out, "regimes.png")))
 invisible(plot_scenarios(sc, cfg, file = file.path(out, "scenarios.png")))
+invisible(plot_positions(pos_hist, file = file.path(out, "positions.png")))
 invisible(plot_portfolio(ph, cfg, pf$rebalance$frequency_months, file = file.path(out, "portfolio.png")))
 
 # 7. Console summary ----------------------------------------------------------------
@@ -66,4 +76,7 @@ cat("\n== Semáforo ==\n"); print(sig[, .(senal, valor = round(valor, 2), estado
 cat("\n== Escenarios (% , cartera sin emergencia) ==\n")
 print(sc[, lapply(.SD, function(x) if (is.numeric(x)) round(x, 2) else x)])
 cat("\n== Traspasos al objetivo ==\n"); print(reb)
+cat("\n== Posiciones ==\n")
+print(pos_sum[, .(nombre, valor_eur = round(valor_eur), resultado_eur = round(resultado_eur),
+                  rentab_total_pct = round(rentab_total_pct, 1), var_dia_pct = round(var_dia_pct, 2))])
 log_msg("Done. Outputs in ", out, "/")

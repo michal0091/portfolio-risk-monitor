@@ -4,13 +4,21 @@ log_msg <- function(...) message(format(Sys.time(), "[%H:%M:%S] "), ...)
 
 read_cfg <- function(path = "cfg/config.yaml") yaml::read_yaml(path, fileEncoding = "UTF-8")
 
-read_portfolio <- function(path = "cfg/portfolio.yaml",
-                           fallback = "cfg/portfolio.example.yaml") {
+# Personal YAML (git-ignored) with fallback to the public example
+read_personal <- function(path, fallback) {
   if (!file.exists(path)) {
-    log_msg("cfg/portfolio.yaml not found, using ", fallback)
+    log_msg(path, " not found, using ", fallback)
     path <- fallback
   }
   yaml::read_yaml(path, fileEncoding = "UTF-8")
+}
+
+read_portfolio <- function(path = "cfg/portfolio.yaml",
+                           fallback = "cfg/portfolio.example.yaml") read_personal(path, fallback)
+
+read_positions <- function(path = "cfg/positions.yaml",
+                           fallback = "cfg/positions.example.yaml") {
+  read_personal(path, fallback)$positions
 }
 
 ensure_dirs <- function(cfg) {

@@ -1,0 +1,49 @@
+# Tracked positions — copy to cfg/positions.yaml and edit. cfg/positions.yaml is git-ignored.
+# Example positions, not a real portfolio.
+#
+# id:          short name used for files and charts (letters, digits, underscore)
+# ticker:      Yahoo Finance symbol (funds: Morningstar code such as 0P0000XXXX.F)
+# currency:    trading currency of the ticker (EUR, USD, GBP...); converted to EUR with Yahoo FX
+# withholding: tax withheld on dividends, as a fraction (optional, default 0)
+# lots:        one entry per purchase; a sale is a lot with negative shares
+#   date, shares, price (in the ticker currency, as paid, before any later split),
+#   fees (EUR, optional)
+
+positions:
+  - id: santander
+    name: "Banco Santander"
+    ticker: "SAN.MC"
+    type: stock
+    currency: EUR
+    withholding: 0.19
+    lots:
+      - {date: "2023-03-15", shares: 300, price: 3.40, fees: 4}
+      - {date: "2024-08-05", shares: 200, price: 4.20, fees: 4}
+
+  - id: microsoft
+    name: "Microsoft"
+    ticker: "MSFT"
+    type: stock
+    currency: USD
+    withholding: 0.34          # 15 % US treaty + 19 % Spain on the net (approximation)
+    lots:
+      - {date: "2022-10-20", shares: 10, price: 236.00, fees: 5}
+      - {date: "2025-04-07", shares: 5,  price: 360.00, fees: 5}
+      - {date: "2026-02-10", shares: -4, price: 410.00, fees: 5}
+
+  - id: nvidia
+    name: "NVIDIA"
+    ticker: "NVDA"
+    type: stock
+    currency: USD
+    withholding: 0.34
+    lots:
+      - {date: "2023-01-10", shares: 4, price: 159.00, fees: 5}   # before the 10:1 split of 2024
+
+  - id: msci_world
+    name: "iShares Core MSCI World"
+    ticker: "IWDA.AS"
+    type: etf
+    currency: EUR
+    lots:
+      - {date: "2021-06-01", shares: 40, price: 72.50, fees: 2}

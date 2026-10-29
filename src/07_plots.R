@@ -126,3 +126,32 @@ plot_portfolio <- function(ph, cfg, every_months = 1, file = NULL) {
   if (!is.null(file)) ggplot2::ggsave(file, p, width = 11, height = 7, dpi = 120, bg = "white")
   p
 }
+
+plot_positions <- function(hist, file = NULL) {
+  tot <- hist[, .(valor_eur = sum(valor_eur), resultado_eur = sum(resultado_eur),
+                  invertido_eur = sum(invertido_eur)), by = date][, nombre := "Total"]
+  x <- rbind(hist[, .(date, nombre, valor_eur, resultado_eur, invertido_eur)], tot)
+  x[, rentab := 100 * resultado_eur / invertido_eur]
+  x <- data.table::melt(x[, .(date, nombre, valor_eur, rentab)], id.vars = c("date", "nombre"),
+                        variable.name = "panel")
+  x[, panel := factor(panel, levels = c("valor_eur", "rentab"),
+                      labels = c("Valor (EUR)", "Resultado total con dividendos (% invertido)"))]
+  noms <- c(setdiff(unique(hist$nombre), "Total"), "Total")
+  x[, nombre := factor(nombre, levels = noms)]
+  pal <- c(utils::head(c("#2c7fb8", "#e6862e", "#41ab5d", "#8856a7", "#d95f5f", "#7f8c8d",
+                         "#c9a227", "#1b9e9e"), length(noms) - 1), "grey15")
+  p <- ggplot2::ggplot(x, ggplot2::aes(date, value, colour = nombre)) +
+    ggplot2::geom_hline(yintercept = 0, colour = "grey70") +
+    ggplot2::geom_line(ggplot2::aes(linewidth = nombre == "Total")) +
+    ggplot2::scale_linewidth_manual(values = c(`FALSE` = .45, `TRUE` = .8), guide = "none") +
+    ggplot2::scale_colour_manual(values = stats::setNames(pal, noms)) +
+    ggplot2::facet_grid(panel ~ ., scales = "free_y", switch = "y") +
+    ggplot2::labs(title = "Posiciones seguidas", x = NULL, y = NULL, colour = NULL,
+                  subtitle = "Valor en euros y resultado acumulado (plusvalía, ventas y dividendos netos)",
+                  caption = "Fuente: Yahoo Finance vía quantmod. Precios de cierre y tipos de cambio de Yahoo") +
+    theme_monitor() +
+    ggplot2::theme(legend.position = "bottom", strip.placement = "outside",
+                   strip.text.y.left = ggplot2::element_text(angle = 90))
+  if (!is.null(file)) ggplot2::ggsave(file, p, width = 11, height = 7, dpi = 120, bg = "white")
+  p
+}

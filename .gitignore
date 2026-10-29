@@ -1,6 +1,7 @@
 data/
 output/
 cfg/portfolio.yaml
+cfg/positions.yaml
 .Renviron
 .Rhistory
 .RData
