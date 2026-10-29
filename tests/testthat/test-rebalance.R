@@ -35,3 +35,24 @@ test_that("fund_drift moves weights with the proxies since as_of", {
   p2$as_of <- NULL
   expect_equal(fund_drift(daily, p2)$peso_estimado, unname(w0))
 })
+
+test_that("values_eur replaces weights_current and gives EUR estimates", {
+  p2 <- pf; p2$values_eur <- list(groupama = 5000, world = 3000, europe = 1000, em = 1000)
+  p2 <- normalize_portfolio(p2)
+  expect_true(p2$values_based)
+  expect_equal(unlist(p2$weights_current), c(groupama = 50, world = 30, europe = 10, em = 10))
+  expect_false(normalize_portfolio(pf)$values_based)          # nulls -> percentages only
+  dates <- as.Date(c("2026-01-01", "2026-06-30", "2026-07-01"))
+  daily <- data.table::rbindlist(list(
+    data.table::data.table(date = dates, id = "world", value = c(100, 110, 121)),
+    data.table::data.table(date = dates, id = c("europe"), value = 100),
+    data.table::data.table(date = dates, id = c("em"), value = 100),
+    data.table::data.table(date = dates, id = "estr", value = 0)))
+  p2$as_of <- "2026-01-01"
+  d <- fund_drift(daily, p2)
+  expect_equal(d[fondo == "world", valor_estimado_eur], 3000 * 1.21)
+  expect_equal(d[fondo == "world", valor_previo_eur], 3000 * 1.10)
+  total <- sum(d$valor_estimado_eur)
+  expect_equal(sum(d$traspaso_eur), 0)
+  expect_equal(d[fondo == "groupama", traspaso_eur], (pf$weights_target$groupama / 100) * total - 5000)
+})

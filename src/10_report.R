@@ -105,11 +105,22 @@ section_funds <- function(r) {
   l <- ph[.N]
   ref <- function(d) { y <- ph[date <= d]; if (nrow(y)) data.table::last(y$valor) else NA_real_ }
   ytd <- ref(as.Date(paste0(format(l$date, "%Y"), "-01-01")) - 1)
-  lines <- c("<b>Cartera de fondos</b> (simulada con proxies)",
-             paste0("Día ", fmt_signed(100 * (l$valor / ph[.N - 1, valor] - 1), 2),
-                    " · Año ", fmt_signed(100 * (l$valor / ytd - 1)),
-                    " · Caída desde máximo ", fmt_signed(l$caida_desde_max)))
   d <- r$drift
+  sim <- paste0("Año ", fmt_signed(100 * (l$valor / ytd - 1)), " · Caída desde máximo ",
+                fmt_signed(l$caida_desde_max))
+  if (!is.null(d) && "valor_estimado_eur" %in% names(d)) {
+    # EUR snapshot drifted with the proxies; the simulation only gives year and drawdown
+    v <- sum(d$valor_estimado_eur); vp <- sum(d$valor_previo_eur)
+    lines <- c("<b>Cartera de fondos</b> (estimada con proxies)",
+               paste0("Valor ≈ ", fmt_eur(v), " · día ", fmt_eur(v - vp, TRUE), " (",
+                      fmt_signed(100 * (v / vp - 1), 2), ")",
+                      if (is.na(d$desde[1])) " <i>(sin fecha as_of: importes del día anotado)</i>"
+                      else paste0(" <i>(importes del ", format(d$desde[1], "%d/%m/%Y"), ")</i>")),
+               paste0(sim, " <i>(simulación con tus pesos)</i>"))
+  } else {
+    lines <- c("<b>Cartera de fondos</b> (simulada con proxies)",
+               paste0("Día ", fmt_signed(100 * (l$valor / ph[.N - 1, valor] - 1), 2), " · ", sim))
+  }
   if (!is.null(d) && nrow(d)) {
     m <- d[which.max(abs(desvio_pp))]
     lines <- c(lines, paste0("Mayor desvío del objetivo: ", html_escape(m$nombre), " ",
@@ -190,7 +201,11 @@ build_alerts <- function(r) {
     out$band <- data.table::data.table(
       grupo = fb$nombre, clave = paste0("banda|", fb$fondo),
       texto = paste0(fmt_signed(fb$desvio_pp, 1, " pp"),
-                     " respecto al objetivo (banda ±", r$pf$rebalance$band_pp, " pp)",
+                     if ("traspaso_eur" %in% names(fb))
+                       paste0(", ≈ ", fmt_eur(abs(fb$traspaso_eur)),
+                              ifelse(fb$traspaso_eur > 0, " por debajo del objetivo", " por encima del objetivo"))
+                     else " respecto al objetivo",
+                     " (banda ±", r$pf$rebalance$band_pp, " pp)",
                      if (is.na(fb$desde[1])) "" else paste0(", estimado desde ", format(fb$desde[1], "%d/%m/%Y"))))
   }
   res <- data.table::rbindlist(out)
@@ -246,11 +261,24 @@ section_scenarios <- function(r) {
 }
 
 section_rebalance <- function(r) {
-  reb <- r$rebalance[fuera_de_banda == TRUE]
-  if (!nrow(reb)) return("<b>Rebalanceo</b>: todos los fondos dentro de banda")
-  paste(c("<b>Rebalanceo</b> (fondos fuera de banda)",
-          paste0("• ", html_escape(reb$nombre), ": ", fmt_signed(reb$desvio_pp, 1, " pp"),
-                 " → traspasar ", fmt_signed(reb$traspaso_pp, 1, " pp"))), collapse = "\n")
+  d <- r$drift
+  if (is.null(d) || !nrow(d)) return(NULL)
+  eur <- "traspaso_eur" %in% names(d)
+  head <- paste0("<b>Rebalanceo</b> (pesos estimados", if (is.na(d$desde[1])) "" else
+    paste0(" desde ", format(d$desde[1], "%d/%m/%Y")), ")")
+  lines <- paste0("• ", html_escape(d$nombre), ": ", fmt_num(d$peso_estimado, 1), " % (objetivo ",
+                  fmt_num(d$peso_objetivo, 1), " %, ", fmt_signed(d$desvio_pp, 1, " pp"), ")",
+                  if (eur) paste0(" · ", fmt_eur(d$valor_estimado_eur)) else "",
+                  ifelse(d$fuera_de_banda, " <b>fuera de banda</b>", ""))
+  if (any(d$fuera_de_banda)) {
+    tr <- d[abs(desvio_pp) > 0.05]
+    lines <- c(lines, if (eur) paste0("Traspasos al objetivo, por tramo (", r$pf$rebalance$tranches, " tramos): ",
+                                       paste0(html_escape(tr$nombre), ifelse(tr$traspaso_eur > 0, " recibe ", " cede "),
+                                              fmt_eur(abs(tr$traspaso_eur_por_tramo)), collapse = " · "))
+               else paste0("Traspasos al objetivo: ", paste0(html_escape(tr$nombre), " ",
+                                                            fmt_signed(-tr$desvio_pp, 1, " pp"), collapse = " · ")))
+  } else lines <- c(lines, "Todos los fondos dentro de banda")
+  paste(c(head, lines), collapse = "\n")
 }
 
 section_garch <- function(r, full = FALSE) {

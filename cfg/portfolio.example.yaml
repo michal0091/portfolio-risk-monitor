@@ -26,8 +26,10 @@ rebalance:
   tranches: 2              # number of tranches for a rebalance
   frequency_months: 3      # calendar rebalancing in the simulated history (3 = quarterly)
 
-# Current market values in EUR (optional; used by the rebalance calculator).
-# Leave null to work in percentages only.
+# Market values in EUR on the as_of date (optional). When all four are filled they replace
+# weights_current: the monitor derives the weights from them, estimates today's value of
+# each fund with its proxy and gives transfers in EUR. Refresh them (and as_of) from the
+# broker now and then, e.g. after each transfer. Leave null to work in percentages only.
 values_eur: {groupama: null, world: null, europe: null, em: null}
 
 # Pension plan (permanent-portfolio style: equity, gold, long bonds, cash)

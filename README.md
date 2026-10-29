@@ -59,7 +59,7 @@ Rscript main.R synthetic    # demo offline con datos simulados
 
 Dependencias (en `DESCRIPTION`): `data.table`, `zoo`, `xts`, `quantmod`, `yaml`, `ggplot2`, `scales`, `httr2`, `curl` y `rugarch`; `testthat` para los tests.
 
-Para obtener los traspasos en euros, rellena `values_eur` en `cfg/portfolio.yaml`. Si no, el cálculo se hace en puntos porcentuales.
+**Importes en euros:** si rellenas `values_eur` (los cuatro fondos) y `as_of` en `cfg/portfolio.yaml` con los importes de tu bróker en esa fecha, sustituyen a `weights_current`. El monitor estima cada día el valor de cada fondo con su proxy, y el informe muestra el valor de la cartera y su variación en euros y los traspasos al objetivo en euros por tramo. Es una estimación que se aleja poco a poco de la realidad: conviene refrescar importes y fecha de vez en cuando, por ejemplo tras cada traspaso. Sin importes, todo se calcula en puntos porcentuales.
 
 **Posiciones seguidas** (`cfg/positions.yaml`): cada valor lleva su ticker de Yahoo, su divisa, la retención sobre dividendos y una lista de compras (`date`, `shares`, `price`, `fees`); una venta es una compra con títulos negativos. El monitor convierte todo a euros con los tipos de Yahoo, ajusta las compras por splits y calcula la plusvalía latente y realizada (coste medio) y los dividendos cobrados (títulos en cartera el día anterior a la fecha ex-dividendo, netos de retención).
 
@@ -138,6 +138,7 @@ main.R                       punto de entrada
 | `regimes_monthly.csv`, `regimes.png` | régimen mensual inflación × crédito |
 | `regime_performance.csv`, `regime_transitions.csv` | rentabilidad condicionada y matriz de transición |
 | `rebalance_plan.csv`, `glide_path.csv` | traspasos por tramo y senda del bolsillo de entrada |
+| `fund_drift.csv` | pesos (y valor en euros si hay `values_eur`) estimados hoy desde `as_of`, desvío del objetivo y traspasos |
 
 ### Proxies (verificar)
 

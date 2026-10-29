@@ -14,7 +14,22 @@ read_personal <- function(path, fallback) {
 }
 
 read_portfolio <- function(path = "cfg/portfolio.yaml",
-                           fallback = "cfg/portfolio.example.yaml") read_personal(path, fallback)
+                           fallback = "cfg/portfolio.example.yaml") {
+  normalize_portfolio(read_personal(path, fallback))
+}
+
+# When every fund has a value in values_eur, those amounts are the source of truth:
+# weights_current is derived from them so all modules use the same snapshot.
+normalize_portfolio <- function(pf) {
+  ids <- names(pf$weights_target)
+  v <- pf$values_eur[ids]
+  pf$values_based <- length(v) == length(ids) && !any(sapply(v, is.null))
+  if (pf$values_based) {
+    vals <- unlist(v)
+    pf$weights_current <- as.list(100 * vals / sum(vals))
+  }
+  pf
+}
 
 read_positions <- function(path = "cfg/positions.yaml",
                            fallback = "cfg/positions.example.yaml") {
