@@ -138,7 +138,11 @@ position_summary <- function(positions, pdata, hist) {
     lots[, fx := fx_at(pdata, p$currency, date)][, flow := shares * price * fx]
     b <- lot_book(lots)
     l <- data.table::last(x); d <- l$date
-    ytd_ref <- last_on(x, as.Date(paste0(format(d, "%Y"), "-01-01")) - 1)
+    # Day / month / year changes are of the security itself: use its full price history,
+    # so a position bought this year still gets a year-to-date change
+    u <- position_prices(list(p), pdata)
+    if (!nrow(u)) u <- x
+    ytd_ref <- last_on(u, as.Date(paste0(format(d, "%Y"), "-01-01")) - 1)
     data.table::data.table(
       id = p$id, nombre = p$name, fecha = d, divisa = quote_ccy(p$currency),
       titulos = l$titulos, precio = l$precio,
@@ -148,8 +152,8 @@ position_summary <- function(positions, pdata, hist) {
       plusvalia_latente_eur = l$valor_eur - b$cost, plusvalia_realizada_eur = b$realised,
       dividendos_eur = l$dividendos_eur, resultado_eur = l$resultado_eur,
       rentab_total_pct = 100 * l$resultado_eur / l$invertido_eur,
-      var_dia_pct = 100 * (l$unidad_eur / last_on(x, d - 1) - 1),
-      var_1m_pct  = 100 * (l$unidad_eur / last_on(x, d - 30) - 1),
+      var_dia_pct = 100 * (l$unidad_eur / last_on(u, d - 1) - 1),
+      var_1m_pct  = 100 * (l$unidad_eur / last_on(u, d - 30) - 1),
       var_anio_pct = 100 * (l$unidad_eur / ytd_ref - 1))
   })
   s <- data.table::rbindlist(rows)

@@ -49,3 +49,13 @@ test_that("history uses a common calendar across exchanges", {
   h <- position_history(p2, d2)
   expect_equal(h[date == as.Date("2024-03-01"), sort(id)], c("abc", "eur"))
 })
+
+test_that("year-to-date change uses the price history before the purchase", {
+  p3 <- list(list(id = "new", name = "New", ticker = "N", type = "etf", currency = "EUR",
+                  lots = list(list(date = "2024-06-03", shares = 1, price = 120))))
+  d3 <- data.table::data.table(date = seq(as.Date("2023-12-01"), as.Date("2024-12-31"), by = "day"),
+                               id = "px_new")
+  d3[, value := data.table::fifelse(date < as.Date("2024-01-01"), 100, 125)]
+  s <- position_summary(p3, d3, position_history(p3, d3))[id == "new"]
+  expect_equal(s$var_anio_pct, 25)
+})
