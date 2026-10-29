@@ -85,6 +85,7 @@ signals:
 # C: deflationary crash                | D: soft landing
 # ---------------------------------------------------------------------------
 scenarios:
+  names: {A: "Desinflado ordenado IA", B: "Estanflación + crédito", C: "Crash deflacionario", D: "Aterrizaje suave"}
   probabilities: {A: 0.40, B: 0.25, C: 0.20, D: 0.15}
   returns:
     groupama:  {A: 2.5,  B: 3.0,  C: 1.5,  D: 2.5}

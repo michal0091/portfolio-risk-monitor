@@ -55,7 +55,7 @@ fwrite(glide_path(pf), file.path(out, "glide_path.csv"))
 # 6. Charts -------------------------------------------------------------------------
 invisible(plot_signals(daily, cfg, file = file.path(out, "signals.png")))
 invisible(plot_regimes(w, file = file.path(out, "regimes.png")))
-invisible(plot_scenarios(sc, file = file.path(out, "scenarios.png")))
+invisible(plot_scenarios(sc, cfg, file = file.path(out, "scenarios.png")))
 
 # 7. Console summary ----------------------------------------------------------------
 cat("\n== Escenario sugerido por las señales ==\n"); print(hint)
