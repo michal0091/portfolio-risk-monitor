@@ -85,6 +85,7 @@ main.R                       punto de entrada
 | `scenarios.csv`, `scenarios.png` | pérdidas por escenario: actual, objetivo, plan y conjunto |
 | `equity_share_grid.csv` | pérdida por escenario según el % en bolsa (control de la tolerancia −15 %) |
 | `historical_stress.csv` | comportamiento de cada proxy en 2000-02, 2007-09, 2020 y 2022 |
+| `portfolio_history.csv`, `portfolio.png` | evolución simulada de la cartera actual y objetivo (proxies, rebalanceo trimestral por defecto: `rebalance: frequency_months` en `cfg/portfolio.yaml`) y caída desde máximo |
 | `regimes_monthly.csv`, `regimes.png` | régimen mensual inflación × crédito |
 | `regime_performance.csv`, `regime_transitions.csv` | rentabilidad condicionada y matriz de transición |
 | `rebalance_plan.csv`, `glide_path.csv` | traspasos por tramo y senda del bolsillo de entrada |

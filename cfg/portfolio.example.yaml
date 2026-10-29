@@ -24,6 +24,7 @@ rebalance:
   band_pp: 5               # tolerance around each target weight (percentage points)
   glide_pp_per_year: 10    # equity reduction in the house-deposit bucket each October
   tranches: 2              # number of tranches for a rebalance
+  frequency_months: 3      # calendar rebalancing in the simulated history (3 = quarterly)
 
 # Current market values in EUR (optional; used by the rebalance calculator).
 # Leave null to work in percentages only.

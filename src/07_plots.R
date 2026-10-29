@@ -92,3 +92,37 @@ plot_scenarios <- function(sc, cfg, file = NULL) {
   if (!is.null(file)) ggplot2::ggsave(file, p, width = 9, height = 5, dpi = 120, bg = "white")
   p
 }
+
+plot_portfolio <- function(ph, cfg, every_months = 1, file = NULL) {
+  freq <- c(`1` = "mensual", `3` = "trimestral", `6` = "semestral", `12` = "anual")[as.character(every_months)]
+  if (is.na(freq)) freq <- paste("cada", every_months, "meses")
+  x <- data.table::melt(ph, id.vars = c("date", "cartera"), variable.name = "panel")
+  x[, panel := factor(panel, levels = c("valor", "caida_desde_max"),
+                      labels = c("Valor (base 100)", "Caída desde máximo (%)"))]
+  # Legend from lower to higher risk, same colours as plot_scenarios
+  x[, cartera := factor(cartera, levels = c("Cartera objetivo", "Cartera actual"))]
+  win <- data.table::rbindlist(lapply(cfg$stress_windows, data.table::as.data.table))
+  win[, `:=`(start = pmax(as.Date(start), min(ph$date)), end = as.Date(end))]
+  win <- win[end > start]
+  p <- ggplot2::ggplot(x) +
+    ggplot2::geom_rect(data = win, ggplot2::aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf),
+                       fill = "grey90") +
+    ggplot2::geom_text(data = win[, .(start, name, panel = factor("Valor (base 100)",
+                                                                  levels = levels(x$panel)))],
+                       ggplot2::aes(x = start, y = Inf, label = name), hjust = -0.05, vjust = 1.5,
+                       size = 3, colour = "grey40") +
+    ggplot2::geom_line(ggplot2::aes(date, value, colour = cartera), linewidth = 0.5) +
+    ggplot2::scale_colour_manual(values = c("Cartera objetivo" = "#2c7fb8",
+                                            "Cartera actual" = "#253494")) +
+    ggplot2::facet_grid(panel ~ ., scales = "free_y", switch = "y") +
+    ggplot2::labs(title = "Evolución simulada de la cartera de fondos",
+                  subtitle = paste0("Pesos fijos con rebalanceo ", freq,
+                                    " sobre los proxies; sin aportaciones ni comisiones"),
+                  x = NULL, y = NULL, colour = NULL,
+                  caption = "Proxies: IWDA, VEUR, EMIM y €STR para el monetario. Sombreado: episodios de estrés") +
+    theme_monitor() +
+    ggplot2::theme(legend.position = "bottom", strip.placement = "outside",
+                   strip.text.y.left = ggplot2::element_text(angle = 90))
+  if (!is.null(file)) ggplot2::ggsave(file, p, width = 11, height = 7, dpi = 120, bg = "white")
+  p
+}

@@ -37,9 +37,11 @@ fwrite(trans, file.path(out, "regime_transitions.csv"))
 sc   <- scenario_table(cfg, pf)
 grid <- equity_share_grid(cfg, pf)
 hist <- historical_stress(daily, cfg, pf)
+ph   <- portfolio_history(daily, pf)
 fwrite(sc, file.path(out, "scenarios.csv"))
 fwrite(grid, file.path(out, "equity_share_grid.csv"))
 fwrite(hist, file.path(out, "historical_stress.csv"))
+fwrite(ph, file.path(out, "portfolio_history.csv"))
 
 # 4. Signals ------------------------------------------------------------------------
 sig  <- signal_table(na.omit(daily), cfg)
@@ -56,6 +58,7 @@ fwrite(glide_path(pf), file.path(out, "glide_path.csv"))
 invisible(plot_signals(daily, cfg, file = file.path(out, "signals.png")))
 invisible(plot_regimes(w, file = file.path(out, "regimes.png")))
 invisible(plot_scenarios(sc, cfg, file = file.path(out, "scenarios.png")))
+invisible(plot_portfolio(ph, cfg, pf$rebalance$frequency_months, file = file.path(out, "portfolio.png")))
 
 # 7. Console summary ----------------------------------------------------------------
 cat("\n== Escenario sugerido por las señales ==\n"); print(hint)

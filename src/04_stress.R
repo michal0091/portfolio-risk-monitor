@@ -70,3 +70,43 @@ historical_stress <- function(daily, cfg, pf) {
   }, by = window]
   rbind(res, port)
 }
+
+# Simulated history of the fund portfolio with fixed weights, rebalanced every
+# `every_months` calendar months (3 = quarterly: Jan, Apr, Jul, Oct).
+# Uses each fund's proxy; rate proxies (e.g. estr, % per year) accrue ACT/360.
+# Starts when every proxy has data. Not the real account history: no flows, no fees.
+portfolio_history <- function(daily, pf, every_months = pf$rebalance$frequency_months,
+                              rate_proxies = "estr") {
+  if (is.null(every_months)) every_months <- 1
+  fund_ids <- names(pf$weights_target)
+  proxy <- sapply(pf$funds[fund_ids], `[[`, "proxy")
+  w <- data.table::dcast(daily[id %in% proxy & !is.na(value)], date ~ id, value.var = "value")
+  w <- w[order(date)]
+  for (p in proxy) w[, (p) := zoo::na.locf(get(p), na.rm = FALSE)]
+  w <- w[stats::complete.cases(w)]
+  dt_days <- c(NA, diff(as.numeric(w$date)))
+  rets <- data.table::data.table(date = w$date,
+                                 period = round(12 * as.numeric(zoo::as.yearmon(w$date))) %/% every_months)
+  for (f in fund_ids) {
+    x <- w[[proxy[[f]]]]
+    rets[, (f) := if (proxy[[f]] %in% rate_proxies)
+      data.table::shift(x) / 100 * dt_days / 360 else x / data.table::shift(x) - 1]
+  }
+  rets <- rets[-1]
+  sim <- function(weights, label) {
+    wt <- unlist(weights)[fund_ids] / sum(unlist(weights)[fund_ids])
+    x <- data.table::copy(rets)
+    # within each period weights drift; at period start they are reset to target
+    x[, path := Reduce(`+`, lapply(fund_ids, function(f) wt[[f]] * cumprod(1 + get(f)))),
+      by = period]
+    pe <- x[, .(g = data.table::last(path)), by = period]
+    pe[, start := data.table::shift(cumprod(g), fill = 1)]
+    x <- pe[x, on = "period"]
+    rbind(data.table::data.table(date = w$date[1], cartera = label, valor = 100),
+          x[, .(date, cartera = label, valor = 100 * start * path)])
+  }
+  res <- rbind(sim(pf$weights_current, "Cartera actual"),
+               sim(pf$weights_target, "Cartera objetivo"))
+  res[, caida_desde_max := -drawdown_pct(valor), by = cartera]
+  res[]
+}
