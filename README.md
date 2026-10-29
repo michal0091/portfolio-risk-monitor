@@ -96,7 +96,7 @@ Sin credenciales, o con `--dry-run`, no se envía nada.
 - Los datos personales solo entran como secretos y nunca se escriben en el log, que muestra las series de las posiciones como `private series`.
 - No se suben artefactos.
 - La caché de datos se guarda en dos partes: las series de mercado en claro y las de tus posiciones cifradas con `CACHE_PASSPHRASE`.
-- Si cambias `cfg/portfolio.yaml` o `cfg/positions.yaml`, vuelve a guardar su secreto.
+- Si cambias `cfg/portfolio.yaml` o `cfg/positions.yaml`, vuelve a guardar su secreto con `./update_secrets.sh` (los dos) o `./update_secrets.sh portfolio` / `positions` (uno). El script comprueba antes que el YAML se lee bien.
 
 ### Estructura
 
