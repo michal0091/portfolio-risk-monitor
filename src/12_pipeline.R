@@ -1,7 +1,8 @@
 # Whole pipeline as a function, shared by main.R (local, console summary) and report.R
 # (Telegram, quiet). Writes every output to cfg$project$output and returns the results.
 
-run_pipeline <- function(cfg, pf, pos, charts = TRUE) {
+# forecast: "none", "daily" (GARCH of the fund portfolios) or "full"
+run_pipeline <- function(cfg, pf, pos, charts = TRUE, forecast = "full") {
   out <- cfg$project$output
   synthetic <- isTRUE(cfg$project$use_synthetic)
   fw <- function(x, name) data.table::fwrite(x, file.path(out, name))
@@ -51,7 +52,22 @@ run_pipeline <- function(cfg, pf, pos, charts = TRUE) {
   fw(pos_sum, "positions_summary.csv")
   fw(divs, "dividends.csv")
 
-  # 7. Charts
+  # 7. Forecasts
+  fc <- if (forecast != "none") run_forecasts(daily, w, ph, pos_hist, cfg, pf, level = forecast) else list()
+  if (!is.null(fc$garch)) {
+    fw(fc$garch$table, "garch.csv")
+    fw(fc$garch$vol, "garch_vol.csv")
+  }
+  if (!is.null(fc$bootstrap)) {
+    fw(fc$bootstrap$summary, "bootstrap.csv")
+    fw(fc$bootstrap$fan, "bootstrap_fan.csv")
+    fw(fc$logit$metrics, "early_warning.csv")
+    fw(fc$logit$coefs, "early_warning_coefs.csv")
+    fw(fc$logit$series, "early_warning_series.csv")
+    fw(fc$capm, "capm.csv")
+  }
+
+  # 8. Charts
   if (charts) {
     invisible(plot_signals(daily, cfg, file = file.path(out, "signals.png")))
     invisible(plot_regimes(w, file = file.path(out, "regimes.png")))
@@ -59,9 +75,11 @@ run_pipeline <- function(cfg, pf, pos, charts = TRUE) {
     invisible(plot_positions(pos_hist, file = file.path(out, "positions.png")))
     invisible(plot_portfolio(ph, cfg, pf$rebalance$frequency_months,
                              file = file.path(out, "portfolio.png")))
+    if (!is.null(fc$bootstrap)) invisible(plot_bootstrap(fc$bootstrap, cfg, file = file.path(out, "bootstrap.png")))
+    if (!is.null(fc$garch) && nrow(fc$garch$vol)) invisible(plot_garch(fc$garch$vol, file = file.path(out, "garch.png")))
   }
 
   list(daily = daily, regimes = w, scenarios = sc, portfolio = ph, signals = sig,
        hint = hint, rebalance = reb, positions = pos_sum, positions_history = pos_hist,
-       dividends = divs, stale = c(attr(daily, "stale"), attr(pdata, "stale")))
+       dividends = divs, forecast = fc, forecast_loss = cfg$forecast$bootstrap$loss, stale = c(attr(daily, "stale"), attr(pdata, "stale")))
 }

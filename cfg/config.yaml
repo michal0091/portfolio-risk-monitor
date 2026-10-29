@@ -103,3 +103,28 @@ stress_windows:
   - {name: "Crisis financiera 2007-09", start: "2007-10-01", end: "2009-03-31"}
   - {name: "Covid 2020", start: "2020-02-15", end: "2020-03-31"}
   - {name: "Inflación 2022", start: "2022-01-01", end: "2022-10-31"}
+
+# ---------------------------------------------------------------------------
+# Forecasting (src/09_forecast.R)
+# ---------------------------------------------------------------------------
+forecast:
+  cash_fallback_pct: 2.0        # EUR cash return (% a year) before the €STR series starts (2019)
+  bootstrap:                    # block bootstrap of monthly returns within the current regime
+    n_paths: 10000
+    horizon: 24                 # months
+    block: 6                    # months per block
+    loss: 15                    # drawdown threshold (%) for P(caída)
+    min_regime_months: 36       # fewer months in the current regime -> use all months
+    seed: 1
+  logit:                        # early warning: P(drawdown > loss within horizon months)
+    index: spx                  # equity index whose drawdown is the target (long history)
+    horizon: 6
+    loss: 15
+    min_events: 6               # positive months needed in the training window to predict
+    start_oos: "2006-01-01"
+  capm:
+    market: world               # MSCI World (EUR) proxy
+    window: 36                  # months
+  garch:
+    model: gjrGARCH             # rugarch variance model, (1,1), Student-t errors
+    min_obs: 500                # daily returns needed to fit

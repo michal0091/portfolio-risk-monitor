@@ -155,3 +155,42 @@ plot_positions <- function(hist, file = NULL) {
   if (!is.null(file)) ggplot2::ggsave(file, p, width = 11, height = 7, dpi = 120, bg = "white")
   p
 }
+
+plot_bootstrap <- function(bs, cfg, file = NULL) {
+  bc <- cfg$forecast$bootstrap
+  x <- data.table::copy(bs$fan)
+  # Legend from lower to higher risk: order by the 24-month 5th percentile
+  ord <- x[mes == max(mes)][order(-p05), cartera]
+  x[, cartera := factor(cartera, levels = ord)]
+  pal <- stats::setNames(c("#a1dab4", "#41b6c4", "#2c7fb8", "#253494")[seq_along(ord)], ord)
+  pv <- function(v) 100 * (v - 1)
+  p <- ggplot2::ggplot(x, ggplot2::aes(mes)) +
+    ggplot2::geom_ribbon(ggplot2::aes(ymin = pv(p05), ymax = pv(p95), fill = cartera), alpha = .18) +
+    ggplot2::geom_ribbon(ggplot2::aes(ymin = pv(p25), ymax = pv(p75), fill = cartera), alpha = .35) +
+    ggplot2::geom_line(ggplot2::aes(y = pv(p50), colour = cartera), linewidth = .7) +
+    ggplot2::geom_hline(yintercept = 0, colour = "grey60") +
+    ggplot2::geom_hline(yintercept = -bc$loss, linetype = 2, colour = "#c0392b") +
+    ggplot2::scale_fill_manual(values = pal) + ggplot2::scale_colour_manual(values = pal) +
+    ggplot2::facet_wrap(~cartera, nrow = 1) +
+    ggplot2::labs(title = "Abanico de rentabilidad a 24 meses (bootstrap por régimen)",
+                  subtitle = paste0("Bloques de ", bc$block, " meses de: ", bs$regime,
+                                    ". Bandas 5-95 % y 25-75 %, línea mediana"),
+                  x = "Meses", y = "Rentabilidad acumulada (%)", fill = NULL, colour = NULL,
+                  caption = "Simulación con rentabilidades históricas; no es una previsión") +
+    theme_monitor() + ggplot2::theme(legend.position = "none")
+  if (!is.null(file)) ggplot2::ggsave(file, p, width = 11, height = 4.5, dpi = 120, bg = "white")
+  p
+}
+
+plot_garch <- function(vol, years = 3, file = NULL) {
+  x <- vol[date >= max(date) - 365 * years]
+  x[, serie := factor(serie, levels = unique(vol$serie))]   # fund portfolios first, then positions
+  p <- ggplot2::ggplot(x, ggplot2::aes(date, vol_anual_pct)) +
+    ggplot2::geom_line(colour = "grey25", linewidth = .4) +
+    ggplot2::facet_wrap(~serie, scales = "free_y", ncol = 3) +
+    ggplot2::labs(title = "Volatilidad condicional (GJR-GARCH)",
+                  subtitle = "Volatilidad anualizada estimada día a día (%)", x = NULL, y = NULL) +
+    theme_monitor()
+  if (!is.null(file)) ggplot2::ggsave(file, p, width = 11, height = 6, dpi = 120, bg = "white")
+  p
+}
