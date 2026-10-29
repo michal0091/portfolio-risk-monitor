@@ -33,7 +33,7 @@ download_positions <- function(positions, cfg) {
     id = paste0("fx_", cc),
     f = function() xts_or_empty(quantmod::Cl(y(quantmod::getSymbols, paste0("EUR", cc, "=X"),
                                               warnings = FALSE)), paste0("fx_", cc))))
-  run_fetch_jobs(c(jobs, fx_jobs), cfg)
+  run_fetch_jobs(c(jobs, fx_jobs), cfg, private = TRUE)
 }
 
 # Lots in the split-adjusted basis of Yahoo (ratio 0.1 = 10 new shares per old share)
@@ -77,7 +77,7 @@ position_history <- function(positions, pdata) {
   divs <- dividends_received(positions, pdata)
   h <- data.table::rbindlist(lapply(positions, function(p) {
     px <- pdata[id == paste0("px_", p$id), .(date, precio = value)][order(date)]
-    if (!nrow(px)) { log_msg("WARN no prices for position ", p$id); return(NULL) }
+    if (!nrow(px)) { log_msg("WARN no prices for a tracked position"); return(NULL) }
     lots <- adjust_lots(p, pdata[id == paste0("spl_", p$id)])
     lots[, fx := fx_at(pdata, p$currency, date)]
     lots[, flow := shares * price * fx]               # + buy, - sale (EUR)
