@@ -16,11 +16,19 @@ xts_or_empty <- function(x, id) {
 quote_ccy  <- function(ccy) if (identical(ccy, "GBp")) "GBP" else ccy
 quote_unit <- function(ccy) if (identical(ccy, "GBp")) 100 else 1
 
+first_lot <- function(positions) min(as.Date(unlist(lapply(positions, function(p) sapply(p$lots, `[[`, "date")))))
+
+# Prices go back lookback_years (risk models need ~500 sessions) even for recent purchases;
+# the tracked history itself starts at the first lot
+history_start <- function(positions, cfg) {
+  min(first_lot(positions) - 10, Sys.Date() - round(365.25 * cfg$forecast$garch$lookback_years))
+}
+
 download_positions <- function(positions, cfg) {
-  from <- min(as.Date(unlist(lapply(positions, function(p) sapply(p$lots, `[[`, "date"))))) - 10
+  from <- history_start(positions, cfg)
   y <- function(f, ...) f(..., src = "yahoo", from = from, auto.assign = FALSE)
   jobs <- unlist(lapply(positions, function(p) list(
-    list(id = paste0("px_", p$id),
+    list(id = paste0("px_", p$id), from = from,
          f = function() xts_or_empty(quantmod::Cl(y(quantmod::getSymbols, p$ticker,
                                                      warnings = FALSE)), paste0("px_", p$id))),
     list(id = paste0("div_", p$id),
@@ -161,4 +169,26 @@ position_summary <- function(positions, pdata, hist) {
   inv <- hist[, .SD[.N], by = id][, sum(invertido_eur)]
   tot[, rentab_total_pct := 100 * resultado_eur / inv]
   rbind(s, tot)
+}
+
+# Full price history of each position in EUR per share (before and after purchase), for
+# GARCH, CAPM and risk contribution
+position_prices <- function(positions, pdata) {
+  data.table::rbindlist(lapply(positions, function(p) {
+    px <- pdata[id == paste0("px_", p$id), .(date, precio = value)][order(date)]
+    if (!nrow(px)) return(NULL)
+    px[, .(date, id = p$id, nombre = p$name, unidad_eur = precio * fx_at(pdata, p$currency, date))]
+  }))
+}
+
+# Price index of today's open positions held in today's quantities (common calendar,
+# last known price on a market holiday): the current risk of the positions as a whole
+positions_index <- function(prices, pos_sum) {
+  h <- pos_sum[id != "total" & titulos > 0, .(id, titulos)]
+  if (!nrow(h) || is.null(prices) || !nrow(prices)) return(NULL)
+  w <- data.table::dcast(prices[id %in% h$id], date ~ id, value.var = "unidad_eur")[order(date)]
+  for (p in h$id) w[, (p) := zoo::na.locf(get(p), na.rm = FALSE)]
+  w <- w[stats::complete.cases(w)]
+  if (!nrow(w)) return(NULL)
+  data.table::data.table(date = w$date, valor = as.numeric(as.matrix(w[, h$id, with = FALSE]) %*% h$titulos))
 }

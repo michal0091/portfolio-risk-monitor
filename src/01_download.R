@@ -32,7 +32,9 @@ fetch_fred <- function(code, id, from) {
 
 # Download one series through the CSV cache. Returns NULL if it fails with no cache;
 # failed ids (stale cache or missing) are collected in the "stale" attribute upstream.
-cached_fetch <- function(id, f, cfg, private = FALSE) {
+# `from`: if given, a cache that starts more than a month later is refreshed even when new
+# (e.g. a longer history is now needed)
+cached_fetch <- function(id, f, cfg, private = FALSE, from = NULL) {
   lab <- if (private) "private series" else id   # personal tickers stay out of public CI logs
   file <- file.path(cfg$project$data_raw, paste0(id, ".csv"))
   read_cache <- function() {
@@ -40,7 +42,10 @@ cached_fetch <- function(id, f, cfg, private = FALSE) {
                                                 value = "numeric"))
     x[, date := as.Date(date)]
   }
-  if (cache_fresh(file, cfg$project$cache_days)) return(read_cache())
+  if (cache_fresh(file, cfg$project$cache_days)) {
+    x <- read_cache()
+    if (is.null(from) || !nrow(x) || min(x$date) <= as.Date(from) + 31) return(x)
+  }
   res <- tryCatch(f(), error = function(e) {
     log_msg("WARN ", lab, ": ", if (private) "download failed" else conditionMessage(e)); NULL
   })
@@ -58,7 +63,7 @@ cached_fetch <- function(id, f, cfg, private = FALSE) {
 run_fetch_jobs <- function(jobs, cfg, private = FALSE) {
   stale <- character()
   out <- lapply(jobs, function(j) {
-    res <- cached_fetch(j$id, j$f, cfg, private)
+    res <- cached_fetch(j$id, j$f, cfg, private, j$from)
     if (inherits(res, "stale_fetch")) { stale <<- c(stale, j$id); res <- res$data }
     res
   })

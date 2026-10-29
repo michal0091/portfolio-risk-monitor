@@ -57,3 +57,34 @@ test_that("garch needs enough observations and reports positive tail losses", {
   expect_true(g$table$es95_1d_pct > g$table$var95_1d_pct)
   expect_equal(g$table$vol_anual_pct, 100 * .01 * sqrt(252), tolerance = .25)
 })
+
+test_that("positions_index holds today's quantities over the whole price history", {
+  dates <- as.Date("2024-01-01") + 0:4
+  prices <- data.table::rbindlist(list(
+    data.table::data.table(date = dates, id = "a", nombre = "A", unidad_eur = c(10, 11, 12, 13, 14)),
+    data.table::data.table(date = dates[-3], id = "b", nombre = "B", unidad_eur = c(5, 5, 6, 6))))
+  ps <- data.table::data.table(id = c("a", "b", "total"), titulos = c(2, 10, NA))
+  idx <- positions_index(prices, ps)
+  expect_equal(idx$valor, c(2 * 10 + 50, 2 * 11 + 50, 2 * 12 + 50, 2 * 13 + 60, 2 * 14 + 60))  # locf
+})
+
+test_that("risk contributions add up to 100 and favour the volatile position", {
+  set.seed(5)
+  dates <- as.Date("2024-01-01") + 0:299
+  prices <- data.table::rbindlist(list(
+    data.table::data.table(date = dates, id = "calm", nombre = "Calm", unidad_eur = 100 * exp(cumsum(rnorm(300, 0, .005)))),
+    data.table::data.table(date = dates, id = "wild", nombre = "Wild", unidad_eur = 100 * exp(cumsum(rnorm(300, 0, .03))))))
+  ps <- data.table::data.table(id = c("calm", "wild", "total"), nombre = c("Calm", "Wild", "Total"),
+                               titulos = c(1, 1, NA), valor_eur = c(500, 500, 1000))
+  rc <- risk_contribution(prices, ps, cfg)
+  expect_equal(sum(rc$aporte_riesgo_pct), 100)
+  expect_equal(rc$id[1], "wild")
+  expect_equal(rc$peso_pct, c(50, 50))
+})
+
+test_that("garch_one reports half-life and last-week volatility", {
+  set.seed(11)
+  g <- garch_one(100 * exp(cumsum(rnorm(1500, 0, .01))), "larga", cfg)$table
+  expect_true(g$media_vida_dias > 0)
+  expect_true(is.finite(g$vol_hace_1s_pct))
+})

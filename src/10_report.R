@@ -281,18 +281,45 @@ section_rebalance <- function(r) {
   paste(c(head, lines), collapse = "\n")
 }
 
+# EUR value behind each GARCH series (fund portfolio needs values_eur)
+garch_values <- function(r, g) {
+  v <- rep(NA_real_, nrow(g))
+  d <- r$drift
+  if (!is.null(d) && "valor_estimado_eur" %in% names(d)) v[g$id == "Cartera actual"] <- sum(d$valor_estimado_eur)
+  s <- r$positions
+  if (!is.null(s) && nrow(s)) {
+    v[g$id == "posiciones"] <- s[id == "total", valor_eur]
+    m <- match(g$id, s$id); v[!is.na(m) & g$id != "posiciones"] <- s$valor_eur[m[!is.na(m)]]
+  }
+  v
+}
+
 section_garch <- function(r, full = FALSE) {
   g <- r$forecast$garch$table
   if (is.null(g) || !nrow(g)) return(NULL)
-  g <- data.table::copy(g)[, serie := data.table::fcase(
-    serie == "Cartera actual", "Cartera de fondos (actual)",
-    serie == "Cartera objetivo", "Cartera de fondos (objetivo)", default = serie)]
-  if (!full) g <- g[serie == "Cartera de fondos (actual)"]
+  g <- data.table::copy(g)
+  g[, valor := garch_values(r, g)]
+  g[, serie := data.table::fcase(
+    id == "Cartera actual", "Cartera de fondos (actual)",
+    id == "Cartera objetivo", "Cartera de fondos (objetivo)", default = serie)]
+  if (!full) g <- g[id %in% c("Cartera actual", "posiciones")]
   if (!nrow(g)) return(NULL)
-  paste(c("<b>Volatilidad (GARCH)</b>",
-          paste0("• ", html_escape(g$serie), ": ", fmt_num(g$vol_anual_pct, 1), " % anual (percentil ",
-                 fmt_num(g$percentil_vol), ") · VaR 95 % 1 día ", fmt_num(g$var95_1d_pct, 2),
-                 " % · 10 días ", fmt_num(g$var95_10d_pct, 1), " %")), collapse = "\n")
+  var_txt <- ifelse(is.na(g$valor), paste0(fmt_num(g$var95_1d_pct, 2), " %"),
+                    paste0("≈ ", fmt_eur(g$valor * g$var95_1d_pct / 100), " (", fmt_num(g$var95_1d_pct, 2), " %)"))
+  lines <- paste0("• ", html_escape(g$serie), ": ", fmt_num(g$vol_anual_pct, 1), " % anual ",
+                  fmt_delta(g$vol_anual_pct - g$vol_hace_1s_pct, 1), " en la semana (percentil ",
+                  fmt_num(g$percentil_vol), ") · VaR 95 % 1 día ", var_txt,
+                  " · 10 días ", fmt_num(g$var95_10d_pct, 1), " %")
+  if (full) lines <- paste0(lines, "\n   ES 95 % 1 día ", fmt_num(g$es95_1d_pct, 2), " % · un shock se reduce a la mitad en ",
+                            ifelse(g$media_vida_dias <= 250, paste0("~", fmt_num(g$media_vida_dias), " días"),
+                                   "más de un año (volatilidad muy persistente)"))
+  out <- c("<b>Volatilidad (GARCH)</b>", lines)
+  rc <- r$forecast$risk
+  if (full && !is.null(rc) && nrow(rc)) out <- c(out, paste0(
+    "Aporte al riesgo de tus posiciones: ",
+    paste0(html_escape(rc$nombre), " ", fmt_num(rc$aporte_riesgo_pct), " % (peso ", fmt_num(rc$peso_pct), " %)",
+           collapse = " · ")))
+  paste(out, collapse = "\n")
 }
 
 section_bootstrap <- function(r) {

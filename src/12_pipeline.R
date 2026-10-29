@@ -46,16 +46,17 @@ run_pipeline <- function(cfg, pf, pos, charts = TRUE, forecast = "full") {
   fw(glide_path(pf), "glide_path.csv")
 
   # 6. Tracked positions
-  pdata <- if (synthetic) synthetic_positions(pos) else download_positions(pos, cfg)
+  pdata <- if (synthetic) synthetic_positions(pos, from = history_start(pos, cfg)) else download_positions(pos, cfg)
   pos_hist <- position_history(pos, pdata)
   pos_sum  <- position_summary(pos, pdata, pos_hist)
+  pos_px   <- position_prices(pos, pdata)
   divs     <- dividends_received(pos, pdata)
   fw(pos_hist, "positions_history.csv")
   fw(pos_sum, "positions_summary.csv")
   fw(divs, "dividends.csv")
 
   # 7. Forecasts
-  fc <- if (forecast != "none") run_forecasts(daily, w, ph, pos_hist, cfg, pf, level = forecast) else list()
+  fc <- if (forecast != "none") run_forecasts(daily, w, ph, pos_px, pos_sum, cfg, pf, level = forecast) else list()
   if (!is.null(fc$garch)) {
     fw(fc$garch$table, "garch.csv")
     fw(fc$garch$vol, "garch_vol.csv")
@@ -67,6 +68,7 @@ run_pipeline <- function(cfg, pf, pos, charts = TRUE, forecast = "full") {
     fw(fc$logit$coefs, "early_warning_coefs.csv")
     fw(fc$logit$series, "early_warning_series.csv")
     fw(fc$capm, "capm.csv")
+    if (!is.null(fc$risk)) fw(fc$risk, "risk_contribution.csv")
   }
 
   # 8. Charts

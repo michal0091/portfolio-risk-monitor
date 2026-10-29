@@ -69,9 +69,8 @@ synthetic_daily <- function(cfg, seed = 42) {
 
 # Synthetic prices, quarterly dividends and FX for tracked positions (same ids as
 # download_positions). Prices start at the first lot price; no splits.
-synthetic_positions <- function(positions, seed = 7) {
+synthetic_positions <- function(positions, seed = 7, from = first_lot(positions) - 10) {
   set.seed(seed)
-  from <- min(as.Date(unlist(lapply(positions, function(p) sapply(p$lots, `[[`, "date"))))) - 10
   dates <- seq(from, Sys.Date(), by = "day")
   dates <- dates[!format(dates, "%u") %in% c("6", "7")]
   n <- length(dates)

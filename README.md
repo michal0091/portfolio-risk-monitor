@@ -132,7 +132,8 @@ main.R                       punto de entrada
 | `bootstrap.csv`, `bootstrap_fan.csv`, `bootstrap.png` | bootstrap por régimen: P(caída > 15 %) a 6, 12 y 24 meses y abanico de rentabilidad por cartera y bolsillo |
 | `early_warning.csv`, `early_warning_coefs.csv`, `early_warning_series.csv` | logit de alerta temprana: probabilidad actual, coeficientes y validación fuera de muestra (AUC, Brier) |
 | `capm.csv` | CAPM a 36 meses frente al MSCI World: alfa, beta, R² y volatilidad de fondos y posiciones |
-| `garch.csv`, `garch_vol.csv`, `garch.png` | GJR-GARCH(1,1) con t de Student: volatilidad condicional, su percentil, VaR y ES a 1 y 10 días |
+| `garch.csv`, `garch_vol.csv`, `garch.png` | GJR-GARCH(1,1) con t de Student de las carteras de fondos, del conjunto de tus posiciones y de cada una: volatilidad condicional, su cambio en la semana y su percentil, VaR y ES a 1 y 10 días, vida media de un shock y movimiento del último día en desviaciones típicas |
+| `risk_contribution.csv` | aporte de cada posición al riesgo del conjunto (covarianza del último año) |
 | `positions_summary.csv`, `positions_history.csv`, `dividends.csv`, `positions.png` | posiciones seguidas: valor, coste, plusvalía latente y realizada, dividendos, variación del día, del mes y del año |
 | `portfolio_history.csv`, `portfolio.png` | evolución simulada de la cartera actual y objetivo (proxies, rebalanceo trimestral por defecto: `rebalance: frequency_months` en `cfg/portfolio.yaml`) y caída desde máximo |
 | `regimes_monthly.csv`, `regimes.png` | régimen mensual inflación × crédito |

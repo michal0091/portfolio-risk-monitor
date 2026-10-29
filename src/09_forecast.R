@@ -132,18 +132,18 @@ early_warning <- function(daily, w, cfg) {
 
 # --- 3. CAPM ------------------------------------------------------------------------
 # Monthly excess returns over €STR versus the market proxy, last `window` months
-capm_table <- function(daily, pos_hist, cfg) {
+capm_table <- function(daily, prices, cfg) {
   cc <- cfg$forecast$capm
   me <- function(dt) dt[order(date), .(v = data.table::last(v)), by = .(m_y = zoo::as.yearmon(date))]
   series <- list()
   for (f in c("world", "europe", "em")) series[[f]] <- me(daily[id == f, .(date, v = value)])
-  if (!is.null(pos_hist) && nrow(pos_hist)) {
-    for (p in unique(pos_hist$id)) series[[p]] <- me(pos_hist[id == p, .(date, v = unidad_eur)])
+  if (!is.null(prices) && nrow(prices)) {
+    for (p in unique(prices$id)) series[[p]] <- me(prices[id == p, .(date, v = unidad_eur)])
   }
   rf <- me(daily[id == "estr", .(date, v = value)])[, .(m_y, rf = data.table::shift(v) / 1200)]
   mk <- series[[cc$market]][, .(m_y, rm = v / data.table::shift(v) - 1)]
   names_map <- c(world = "MSCI World (proxy)", europe = "Europa (proxy)", em = "Emergentes (proxy)")
-  if (!is.null(pos_hist)) names_map <- c(names_map, unique(pos_hist[, .(id, nombre)])[, stats::setNames(nombre, id)])
+  if (!is.null(prices)) names_map <- c(names_map, unique(prices[, .(id, nombre)])[, stats::setNames(nombre, id)])
   data.table::rbindlist(lapply(setdiff(names(series), cc$market), function(s) {
     x <- series[[s]][, .(m_y, ri = v / data.table::shift(v) - 1)][mk, on = "m_y"][rf, on = "m_y"]
     x <- utils::tail(x[stats::complete.cases(x)], cc$window)
@@ -177,6 +177,7 @@ garch_one <- function(price, label, cfg) {
                            -Inf, q)$value / p
     c(var = -(m + s * q), es = -(m + s * es))
   }
+  pers <- sum(rugarch::coef(fit)[c("alpha1", "beta1")]) + rugarch::coef(fit)[["gamma1"]] / 2
   s10 <- sqrt(sum(sig^2)); m10 <- sum(mu)   # 10-day: sum of variances, t quantile (approx.)
   v95 <- tail_loss(.05, sig[1], mu[1]); v99 <- tail_loss(.01, sig[1], mu[1])
   v95_10 <- tail_loss(.05, s10, m10)
@@ -185,7 +186,9 @@ garch_one <- function(price, label, cfg) {
     percentil_vol = 100 * mean(hist_sig <= sig[1]),
     var95_1d_pct = v95[["var"]], es95_1d_pct = v95[["es"]],
     var99_1d_pct = v99[["var"]], es99_1d_pct = v99[["es"]], var95_10d_pct = v95_10[["var"]],
-    persistencia = sum(rugarch::coef(fit)[c("alpha1", "beta1")]) + rugarch::coef(fit)[["gamma1"]] / 2,
+    persistencia = pers,
+    media_vida_dias = if (pers < 1) log(.5) / log(pers) else Inf,   # days for a shock to halve
+    vol_hace_1s_pct = hist_sig[max(1, length(hist_sig) - 4)] * sqrt(252),   # 5 sessions earlier
     # last daily move in conditional standard deviations (sigma known before that day)
     ret_ultimo_pct = r[length(r)],
     z_ultimo = (r[length(r)] - rugarch::coef(fit)[["mu"]]) / hist_sig[length(hist_sig)],
@@ -194,16 +197,18 @@ garch_one <- function(price, label, cfg) {
                                  vol_anual_pct = hist_sig * sqrt(252)))
 }
 
-garch_table <- function(ph, pos_hist, cfg, positions = TRUE) {
+# Fund portfolios, today's positions as a whole and each position (full price history)
+garch_table <- function(ph, prices, pos_sum, cfg) {
   jobs <- list()
-  for (cart in unique(ph$cartera)) {
-    x <- ph[cartera == cart][order(date)]
-    jobs[[length(jobs) + 1]] <- list(label = cart, id = cart, date = x$date, price = x$valor)
-  }
-  if (positions && !is.null(pos_hist) && nrow(pos_hist)) {
-    for (p in unique(pos_hist$id)) {
-      x <- pos_hist[id == p][order(date)]
-      jobs[[length(jobs) + 1]] <- list(label = x$nombre[1], id = p, date = x$date, price = x$unidad_eur)
+  add <- function(label, id, date, price) jobs[[length(jobs) + 1]] <<- list(label = label, id = id,
+                                                                           date = date, price = price)
+  for (cart in unique(ph$cartera)) { x <- ph[cartera == cart][order(date)]; add(cart, cart, x$date, x$valor) }
+  if (!is.null(pos_sum) && nrow(pos_sum)) {
+    idx <- positions_index(prices, pos_sum)
+    if (!is.null(idx)) add("Tus posiciones", "posiciones", idx$date, idx$valor)
+    for (p in pos_sum[id != "total" & titulos > 0, id]) {
+      x <- prices[id == p][order(date)]
+      if (nrow(x)) add(x$nombre[1], p, x$date, x$unidad_eur)
     }
   }
   res <- lapply(jobs, function(j) {
@@ -218,15 +223,35 @@ garch_table <- function(ph, pos_hist, cfg, positions = TRUE) {
        vol = data.table::rbindlist(lapply(res, `[[`, "vol"))[, n := NULL])
 }
 
+# Share of the positions' variance due to each position (Euler: w_i (S w)_i / w' S w),
+# with the covariance of the last `risk_window` daily returns
+risk_contribution <- function(prices, pos_sum, cfg) {
+  h <- pos_sum[id != "total" & titulos > 0, .(id, nombre, valor_eur)]
+  if (nrow(h) < 2) return(NULL)
+  w <- data.table::dcast(prices[id %in% h$id], date ~ id, value.var = "unidad_eur")[order(date)]
+  for (p in h$id) w[, (p) := zoo::na.locf(get(p), na.rm = FALSE)]
+  w <- utils::tail(w[stats::complete.cases(w)], cfg$forecast$garch$risk_window + 1)
+  if (nrow(w) < 60) return(NULL)
+  m <- as.matrix(w[, h$id, with = FALSE])
+  r <- diff(log(m))
+  S <- stats::cov(r)
+  wt <- h$valor_eur / sum(h$valor_eur)
+  contrib <- wt * as.numeric(S %*% wt) / as.numeric(t(wt) %*% S %*% wt)
+  data.table::data.table(id = h$id, nombre = h$nombre, peso_pct = 100 * wt,
+                         aporte_riesgo_pct = 100 * contrib)[order(-aporte_riesgo_pct)]
+}
+
 # --- All forecasts ------------------------------------------------------------------
-# level "daily": GARCH only (portfolios and positions, a few seconds); "full": everything
-run_forecasts <- function(daily, w, ph, pos_hist, cfg, pf, level = "full") {
-  out <- list(garch = garch_table(ph, pos_hist, cfg))   # positions too: daily move alerts
+# level "daily": GARCH only (portfolios and positions, a few seconds); "full": everything.
+# prices: full price history of the positions (position_prices); pos_sum: position_summary
+run_forecasts <- function(daily, w, ph, prices, pos_sum, cfg, pf, level = "full") {
+  out <- list(garch = garch_table(ph, prices, pos_sum, cfg))   # positions too: daily move alerts
   if (level == "full") {
     pr <- portfolio_monthly_returns(fund_monthly_returns(w, cfg), pf)
     out$bootstrap <- regime_bootstrap(pr, cfg)
     out$logit <- early_warning(daily, w, cfg)
-    out$capm <- capm_table(daily, pos_hist, cfg)
+    out$capm <- capm_table(daily, prices, cfg)
+    out$risk <- risk_contribution(prices, pos_sum, cfg)
   }
   out
 }

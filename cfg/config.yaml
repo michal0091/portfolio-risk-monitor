@@ -130,6 +130,8 @@ forecast:
   garch:
     model: gjrGARCH             # rugarch variance model, (1,1), Student-t errors
     min_obs: 500                # daily returns needed to fit
+    lookback_years: 8           # price history downloaded for tracked positions (risk models only)
+    risk_window: 252            # days of returns for the risk contribution of each position
 
 # ---------------------------------------------------------------------------
 # Telegram report (src/10_report.R)
