@@ -1,0 +1,36 @@
+# Portfolio weights — copy to cfg/portfolio.yaml and edit. cfg/portfolio.yaml is git-ignored.
+# Weights are % of the fund portfolio. The pension plan is described separately.
+
+as_of: "2026-10-25"
+
+funds:
+  groupama: {name: "Groupama Trésorerie IC",          isin: "FR0000989626", fee: 0.07, proxy: estr}
+  world:    {name: "Fidelity MSCI World Index P Acc", isin: "IE00BYX5NX33", fee: 0.12, proxy: world}
+  europe:   {name: "Vanguard European Stock Idx Inv", isin: "IE0007987690", fee: 0.12, proxy: europe}
+  em:       {name: "Fidelity MSCI EM Index P Acc",    isin: null,           fee: 0.20, proxy: em}
+
+weights_current: {groupama: 35.00, world: 30.00, europe: 20.00, em: 15.00}
+weights_target:  {groupama: 50.00, world: 22.00, europe: 20.00, em: 8.00}
+
+# Example weights, not a real portfolio.
+# Groupama is split into three logical buckets (share of the fund portfolio, %)
+buckets:
+  emergency:      {groupama: 25.00}
+  house_deposit:  {groupama: 18.00, equity_share: 45}   # glide path: -10 pp equity per year
+  general:        {groupama: 7.00,  equity_share: 80}
+
+# Rebalancing rules
+rebalance:
+  band_pp: 5               # tolerance around each target weight (percentage points)
+  glide_pp_per_year: 10    # equity reduction in the house-deposit bucket each October
+  tranches: 2              # number of tranches for a rebalance
+
+# Current market values in EUR (optional; used by the rebalance calculator).
+# Leave null to work in percentages only.
+values_eur: {groupama: null, world: null, europe: null, em: null}
+
+# Pension plan (permanent-portfolio style: equity, gold, long bonds, cash)
+pension_plan:
+  share_of_total: 20       # % of combined wealth
+  annual_contribution_eur: 1000
+  sleeves: {pp_equity: 23.68, pp_gold: 25.67, pp_long: 19.0, pp_short: 31.65}

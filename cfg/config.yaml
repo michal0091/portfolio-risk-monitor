@@ -1,0 +1,104 @@
+# Portfolio risk monitor — global configuration
+# Series, thresholds and scenario assumptions. Personal weights live in cfg/portfolio.yaml.
+
+project:
+  start_date: "1995-01-01"
+  data_raw: "data/raw"
+  data_processed: "data/processed"
+  output: "output"
+  use_synthetic: false        # TRUE = offline demo with simulated data (no Yahoo/FRED calls)
+  cache_days: 1               # re-download a series only if its cache is older than this
+
+# ---------------------------------------------------------------------------
+# Market data (Yahoo Finance via quantmod::getSymbols, src = "yahoo")
+# role: proxy = stands in for a fund in the portfolio; monitor = early-warning only
+# NOTE: verify tickers before first run; Yahoo symbols change occasionally.
+# ---------------------------------------------------------------------------
+yahoo:
+  - {id: world,    ticker: "IWDA.AS",   role: proxy,   desc: "iShares Core MSCI World (EUR) - proxy Fidelity MSCI World"}
+  - {id: europe,   ticker: "VEUR.AS",   role: proxy,   desc: "Vanguard FTSE Dev. Europe (EUR) - proxy Vanguard European Stock"}
+  - {id: em,       ticker: "EMIM.AS",   role: proxy,   desc: "iShares Core MSCI EM IMI (EUR) - proxy Fidelity MSCI EM"}
+  - {id: spx,      ticker: "^GSPC",     role: monitor, desc: "S&P 500 (long history for regimes)"}
+  - {id: stoxx50,  ticker: "^STOXX50E", role: monitor, desc: "EuroStoxx 50"}
+  - {id: sox,      ticker: "^SOX",      role: monitor, desc: "Philadelphia Semiconductor Index"}
+  - {id: kospi,    ticker: "^KS11",     role: monitor, desc: "KOSPI (memory chips)"}
+  - {id: taiex,    ticker: "^TWII",     role: monitor, desc: "TAIEX (TSMC)"}
+  - {id: nvda,     ticker: "NVDA",      role: monitor, desc: "NVIDIA"}
+  - {id: orcl,     ticker: "ORCL",      role: monitor, desc: "Oracle (debt-funded AI capex)"}
+  - {id: crwv,     ticker: "CRWV",      role: monitor, desc: "CoreWeave (neocloud weak link)"}
+  - {id: bizd,     ticker: "BIZD",      role: monitor, desc: "BDC ETF (private credit proxy)"}
+  - {id: arcc,     ticker: "ARCC",      role: monitor, desc: "Ares Capital (largest BDC)"}
+  - {id: gold,     ticker: "GC=F",      role: monitor, desc: "Gold futures (pension plan sleeve)"}
+
+# ---------------------------------------------------------------------------
+# Macro & credit (FRED via quantmod::getSymbols, src = "FRED"; no API key needed)
+# ---------------------------------------------------------------------------
+fred:
+  - {id: hy_oas,     code: "BAMLH0A0HYM2",          desc: "US High Yield OAS (%)"}
+  - {id: ig_oas,     code: "BAMLC0A0CM",            desc: "US IG corporate OAS (%)"}
+  - {id: eu_hy_oas,  code: "BAMLHE00EHYIOAS",       desc: "Euro High Yield OAS (%)"}
+  - {id: baa10y,     code: "BAA10Y",                desc: "Moody's Baa minus 10y Treasury (%) - long credit history for regimes"}
+  - {id: ust10,      code: "DGS10",                 desc: "US 10y Treasury yield (%)"}
+  - {id: ust2,       code: "DGS2",                  desc: "US 2y Treasury yield (%)"}
+  - {id: tips10,     code: "DFII10",                desc: "US 10y real yield (%)"}
+  - {id: bei10,      code: "T10YIE",                desc: "US 10y breakeven inflation (%)"}
+  - {id: brent,      code: "DCOILBRENTEU",          desc: "Brent (USD/bbl)"}
+  - {id: nfci,       code: "NFCI",                  desc: "Chicago Fed financial conditions"}
+  - {id: stlfsi,     code: "STLFSI4",               desc: "St. Louis Fed financial stress"}
+  - {id: vix,        code: "VIXCLS",                desc: "VIX"}
+  - {id: us_cpi,     code: "CPIAUCSL",              desc: "US CPI index"}
+  - {id: ea_hicp,    code: "CP0000EZ19M086NEST",    desc: "Euro area HICP index"}
+  - {id: estr,       code: "ECBESTRVOLWGTTRMDMNRT", desc: "EUR short-term rate (%) - proxy Groupama"}
+  - {id: eurusd,     code: "DEXUSEU",               desc: "USD per EUR"}
+
+# ---------------------------------------------------------------------------
+# Regime definition (monthly)
+# ---------------------------------------------------------------------------
+regimes:
+  inflation_series: us_cpi      # yoy computed from the index
+  inflation_high: 3.0           # % yoy above which inflation is "alta"
+  credit_series: baa10y         # ICE BofA OAS on FRED only cover the last 3 years; BAA10Y goes back to 1986
+  credit_tense_abs: 3.0         # Baa-10y spread (%) above which credit is "tensionado"
+  credit_tense_window: 60       # ...or above its rolling 60-month median...
+  credit_tense_margin: 0.75     # ...plus this margin (pp)
+
+# ---------------------------------------------------------------------------
+# Early-warning signals: amber / red thresholds (direction: up = higher is worse)
+# ---------------------------------------------------------------------------
+signals:
+  - {id: hy_oas,    direction: up,   amber: 4.0,   red: 5.5,  label: "Spread high yield EE. UU."}
+  - {id: ig_oas,    direction: up,   amber: 1.2,   red: 1.6,  label: "Spread grado de inversión"}
+  - {id: eu_hy_oas, direction: up,   amber: 4.0,   red: 5.5,  label: "Spread high yield euro"}
+  - {id: tips10,    direction: up,   amber: 2.5,   red: 3.0,  label: "Tipo real 10 años EE. UU."}
+  - {id: ust10,     direction: up,   amber: 5.0,   red: 5.5,  label: "Bono 10 años EE. UU."}
+  - {id: brent,     direction: up,   amber: 100,   red: 120,  label: "Brent"}
+  - {id: vix,       direction: up,   amber: 25,    red: 35,   label: "VIX"}
+  - {id: stlfsi,    direction: up,   amber: 0.5,   red: 1.5,  label: "Estrés financiero St. Louis"}
+  - {id: sox_dd,    direction: up,   amber: 20,    red: 35,   label: "Caída del SOX desde máximo (%)"}
+  - {id: kospi_dd,  direction: up,   amber: 20,    red: 35,   label: "Caída del KOSPI desde máximo (%)"}
+  - {id: bizd_dd,   direction: up,   amber: 10,    red: 20,   label: "Caída BDC (crédito privado) desde máximo (%)"}
+  - {id: crwv_dd,   direction: up,   amber: 50,    red: 75,   label: "Caída CoreWeave desde máximo (%)"}
+
+# ---------------------------------------------------------------------------
+# Forward-looking scenarios (judgement, 12-24 months). Returns in % per sleeve.
+# A: orderly deflation of the AI cycle | B: stagflation + credit event
+# C: deflationary crash                | D: soft landing
+# ---------------------------------------------------------------------------
+scenarios:
+  probabilities: {A: 0.40, B: 0.25, C: 0.20, D: 0.15}
+  returns:
+    groupama:  {A: 2.5,  B: 3.0,  C: 1.5,  D: 2.5}
+    world:     {A: -12,  B: -25,  C: -35,  D: 10}
+    europe:    {A: -5,   B: -18,  C: -25,  D: 8}
+    em:        {A: -15,  B: -32,  C: -42,  D: 12}
+    pp_equity: {A: -6,   B: -18,  C: -25,  D: 8}
+    pp_gold:   {A: 5,    B: 0,    C: 10,   D: -5}
+    pp_long:   {A: -3,   B: -15,  C: 20,   D: 4}
+    pp_short:  {A: 2.5,  B: 3.0,  C: 1.5,  D: 2.5}
+
+# Historical stress windows (applied to available proxies)
+stress_windows:
+  - {name: "Punto com 2000-02", start: "2000-03-01", end: "2002-10-31"}
+  - {name: "Crisis financiera 2007-09", start: "2007-10-01", end: "2009-03-31"}
+  - {name: "Covid 2020", start: "2020-02-15", end: "2020-03-31"}
+  - {name: "Inflación 2022", start: "2022-01-01", end: "2022-10-31"}

@@ -1,0 +1,9 @@
+data/
+output/
+cfg/portfolio.yaml
+.Renviron
+.Rhistory
+.RData
+.Rproj.user/
+Rplots.pdf
+HANDOFF.md
