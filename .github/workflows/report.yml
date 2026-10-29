@@ -116,7 +116,7 @@ jobs:
           { find data/raw -name '*.csv' ! -name 'px_*' ! -name 'div_*' ! -name 'spl_*' ! -name 'fx_*';
             find output/state -name 'signals_prev.csv'; } | tar -czf cache/public.tar.gz -T -
           if [ -n "$CACHE_PASSPHRASE" ]; then
-            find data/raw output/state \( -name 'px_*' -o -name 'div_*' -o -name 'spl_*' -o -name 'fx_*' -o -name 'dividends_seen.csv' \) -type f \
+            find data/raw output/state \( -name 'px_*' -o -name 'div_*' -o -name 'spl_*' -o -name 'fx_*' -o -name 'dividends_seen.csv' -o -name 'alerts_prev.csv' \) -type f \
               | tar -cz -T - | openssl enc -aes-256-cbc -pbkdf2 -pass env:CACHE_PASSPHRASE -out cache/private.tar.gz.enc
           fi
 

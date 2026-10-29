@@ -41,3 +41,26 @@ route_contribution <- function(pf, equity_eur = 100) {
   data.table::data.table(fondo = ids, hueco_pp = gap,
                          aportacion_eur = ifelse(ids == ids[which.max(gap)], equity_eur, 0))
 }
+
+# Current fund weights estimated from weights_current (as of pf$as_of) drifted with each
+# fund's proxy (cash proxies such as estr accrue ACT/360). Without as_of the configured
+# weights are taken as current.
+fund_drift <- function(daily, pf, rate_proxies = "estr") {
+  ids <- names(pf$weights_target)
+  w0 <- unlist(pf$weights_current)[ids]; tgt <- unlist(pf$weights_target)[ids]
+  growth <- rep(1, length(ids))
+  from <- if (is.null(pf$as_of)) NA else as.Date(pf$as_of)
+  if (!is.na(from)) {
+    growth <- sapply(ids, function(f) {
+      proxy <- pf$funds[[f]]$proxy
+      x <- daily[id == proxy & date >= from & !is.na(value)][order(date)]
+      if (nrow(x) < 2) return(1)
+      if (proxy %in% rate_proxies) prod(1 + utils::head(x$value, -1) / 100 * diff(as.numeric(x$date)) / 360)
+      else data.table::last(x$value) / x$value[1]
+    })
+  }
+  w <- 100 * w0 * growth / sum(w0 * growth)
+  data.table::data.table(fondo = ids, nombre = sapply(pf$funds[ids], `[[`, "name"),
+                         peso_estimado = w, peso_objetivo = tgt, desvio_pp = w - tgt,
+                         fuera_de_banda = abs(w - tgt) > pf$rebalance$band_pp, desde = from)
+}

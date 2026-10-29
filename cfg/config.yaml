@@ -20,6 +20,8 @@ yahoo:
   - {id: em,       ticker: "EMIM.AS",   role: proxy,   desc: "iShares Core MSCI EM IMI (EUR) - proxy Fidelity MSCI EM"}
   - {id: spx,      ticker: "^GSPC",     role: monitor, desc: "S&P 500 (long history for regimes)"}
   - {id: stoxx50,  ticker: "^STOXX50E", role: monitor, desc: "EuroStoxx 50"}
+  - {id: ibex,     ticker: "^IBEX",     role: monitor, desc: "IBEX 35"}
+  - {id: eurusd_fx, ticker: "EURUSD=X", role: monitor, desc: "USD per EUR (daily, fresher than FRED DEXUSEU)"}
   - {id: sox,      ticker: "^SOX",      role: monitor, desc: "Philadelphia Semiconductor Index"}
   - {id: kospi,    ticker: "^KS11",     role: monitor, desc: "KOSPI (memory chips)"}
   - {id: taiex,    ticker: "^TWII",     role: monitor, desc: "TAIEX (TSMC)"}
@@ -128,3 +130,23 @@ forecast:
   garch:
     model: gjrGARCH             # rugarch variance model, (1,1), Student-t errors
     min_obs: 500                # daily returns needed to fit
+
+# ---------------------------------------------------------------------------
+# Telegram report (src/10_report.R)
+# ---------------------------------------------------------------------------
+report:
+  markets:                      # "Mercados del día": last value and change versus previous close
+    - {id: spx,       label: "S&P 500"}
+    - {id: stoxx50,   label: "EuroStoxx 50"}
+    - {id: ibex,      label: "IBEX 35"}
+    - {id: sox,       label: "SOX"}
+    - {id: gold,      label: "Oro"}
+    - {id: brent,     label: "Brent"}
+    - {id: eurusd_fx, label: "EUR/USD", digits: 4}
+    - {id: vix,       label: "VIX", points: true}   # change in points, not %
+  near_threshold: 0.10          # green signal within 10 % of its amber threshold = "cerca"
+  max_positions: 10             # positions listed in the daily message (largest moves first)
+  alerts:
+    z_move: 2                   # daily move beyond 2 conditional standard deviations (GARCH)
+    drawdown: 10                # % fall of a position from its high since purchase
+    below_cost: true            # price below the average purchase price

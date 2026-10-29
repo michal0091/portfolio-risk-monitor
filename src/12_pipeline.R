@@ -41,6 +41,8 @@ run_pipeline <- function(cfg, pf, pos, charts = TRUE, forecast = "full") {
   # 5. Rebalance
   reb <- rebalance_plan(pf)
   fw(reb, "rebalance_plan.csv")
+  drift <- fund_drift(daily, pf)
+  fw(drift, "fund_drift.csv")
   fw(glide_path(pf), "glide_path.csv")
 
   # 6. Tracked positions
@@ -79,7 +81,7 @@ run_pipeline <- function(cfg, pf, pos, charts = TRUE, forecast = "full") {
     if (!is.null(fc$garch) && nrow(fc$garch$vol)) invisible(plot_garch(fc$garch$vol, file = file.path(out, "garch.png")))
   }
 
-  list(daily = daily, regimes = w, scenarios = sc, portfolio = ph, signals = sig,
+  list(cfg = cfg, pf = pf, daily = daily, regimes = w, drift = drift, scenarios = sc, portfolio = ph, signals = sig,
        hint = hint, rebalance = reb, positions = pos_sum, positions_history = pos_hist,
        dividends = divs, forecast = fc, forecast_loss = cfg$forecast$bootstrap$loss, stale = c(attr(daily, "stale"), attr(pdata, "stale")))
 }

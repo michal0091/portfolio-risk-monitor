@@ -186,6 +186,9 @@ garch_one <- function(price, label, cfg) {
     var95_1d_pct = v95[["var"]], es95_1d_pct = v95[["es"]],
     var99_1d_pct = v99[["var"]], es99_1d_pct = v99[["es"]], var95_10d_pct = v95_10[["var"]],
     persistencia = sum(rugarch::coef(fit)[c("alpha1", "beta1")]) + rugarch::coef(fit)[["gamma1"]] / 2,
+    # last daily move in conditional standard deviations (sigma known before that day)
+    ret_ultimo_pct = r[length(r)],
+    z_ultimo = (r[length(r)] - rugarch::coef(fit)[["mu"]]) / hist_sig[length(hist_sig)],
     grados_libertad = nu),
     vol = data.table::data.table(serie = label, n = seq_along(hist_sig),
                                  vol_anual_pct = hist_sig * sqrt(252)))
@@ -195,18 +198,19 @@ garch_table <- function(ph, pos_hist, cfg, positions = TRUE) {
   jobs <- list()
   for (cart in unique(ph$cartera)) {
     x <- ph[cartera == cart][order(date)]
-    jobs[[length(jobs) + 1]] <- list(label = cart, date = x$date, price = x$valor)
+    jobs[[length(jobs) + 1]] <- list(label = cart, id = cart, date = x$date, price = x$valor)
   }
   if (positions && !is.null(pos_hist) && nrow(pos_hist)) {
     for (p in unique(pos_hist$id)) {
       x <- pos_hist[id == p][order(date)]
-      jobs[[length(jobs) + 1]] <- list(label = x$nombre[1], date = x$date, price = x$unidad_eur)
+      jobs[[length(jobs) + 1]] <- list(label = x$nombre[1], id = p, date = x$date, price = x$unidad_eur)
     }
   }
   res <- lapply(jobs, function(j) {
     g <- garch_one(j$price, j$label, cfg)
     if (is.null(g)) return(NULL)
     g$vol[, date := utils::tail(j$date, nrow(g$vol))]
+    g$table[, id := j$id]
     g
   })
   res <- res[!sapply(res, is.null)]
@@ -215,9 +219,9 @@ garch_table <- function(ph, pos_hist, cfg, positions = TRUE) {
 }
 
 # --- All forecasts ------------------------------------------------------------------
-# level "daily": GARCH of the fund portfolios only (fast); "full": everything
+# level "daily": GARCH only (portfolios and positions, a few seconds); "full": everything
 run_forecasts <- function(daily, w, ph, pos_hist, cfg, pf, level = "full") {
-  out <- list(garch = garch_table(ph, pos_hist, cfg, positions = level == "full"))
+  out <- list(garch = garch_table(ph, pos_hist, cfg))   # positions too: daily move alerts
   if (level == "full") {
     pr <- portfolio_monthly_returns(fund_monthly_returns(w, cfg), pf)
     out$bootstrap <- regime_bootstrap(pr, cfg)

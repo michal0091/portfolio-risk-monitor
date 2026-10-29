@@ -35,19 +35,68 @@ report_header <- function(title, r) {
          "\n<i>Datos de mercado hasta el ", format(d, "%d/%m/%Y"), "</i>")
 }
 
+fmt_delta <- function(x, digits = 2) {
+  x <- round(x, digits) + 0
+  ifelse(is.na(x), "", ifelse(x > 0, paste0("▲", fmt_num(x, digits)),
+                              ifelse(x < 0, paste0("▼", fmt_num(-x, digits)), "=")))
+}
+
+ccy_symbol <- function(ccy) {
+  sym <- c(EUR = " €", USD = " $", GBP = " £", CHF = " CHF", JPY = " ¥")[ccy]
+  ifelse(is.na(sym), paste0(" ", ccy), sym)
+}
+
+# Distance to the next threshold (positive = still that far away)
+signal_distance <- function(sig) {
+  up <- sig$direccion != "down"
+  nxt <- ifelse(sig$estado == "Verde", sig$umbral_ambar, sig$umbral_rojo)
+  ifelse(up, nxt - sig$valor, sig$valor - nxt)
+}
+
 section_signals <- function(r, prev, full = FALSE) {
-  sig <- r$signals
+  sig <- data.table::copy(r$signals)
+  sig[, dist := signal_distance(sig)]
   n <- table(factor(sig$estado, levels = names(status_icon)))
   lines <- c(paste0("<b>Semáforo</b>  ", paste(status_icon[names(n)], n, collapse = "  ")),
              paste0("Escenario más coherente: ", html_escape(r$hint$escenario_probable)))
   show <- if (full) sig else sig[estado != "Verde"]
   show <- show[order(-match(estado, names(status_icon)))]
-  if (nrow(show)) lines <- c(lines, paste0(status_icon[show$estado], " ", html_escape(show$senal),
-                                           ": ", fmt_num(show$valor, 2)))
+  if (nrow(show)) lines <- c(lines, paste0(
+    status_icon[show$estado], " ", html_escape(show$senal), ": ", fmt_num(show$valor, 2),
+    " (", fmt_delta(show$cambio_1d), " día · ", fmt_delta(show$cambio_1m), " mes)",
+    ifelse(show$estado == "Rojo", "", paste0(" · a ", fmt_num(abs(show$dist), 2), " del ",
+                                             ifelse(show$estado == "Verde", "ámbar", "rojo")))))
+  near <- r$cfg$report$near_threshold
+  if (!full && !is.null(near)) {
+    cl <- sig[estado == "Verde" & dist <= near * pmax(abs(umbral_ambar), 1)]
+    if (nrow(cl)) lines <- c(lines, paste0("Cerca del ámbar: ", paste0(
+      html_escape(cl$senal), " ", fmt_num(cl$valor, 2), " (umbral ", fmt_num(cl$umbral_ambar, 2), ")",
+      collapse = " · ")))
+  }
   ch <- signal_changes(sig, prev)
   if (nrow(ch)) lines <- c(lines, "<b>Cambios desde el último informe</b>",
                            paste0(html_escape(ch$senal), ": ", ch$antes, " → ", ch$ahora))
   paste(lines, collapse = "\n")
+}
+
+section_markets <- function(r) {
+  mk <- r$cfg$report$markets
+  if (is.null(mk)) return(NULL)
+  rows <- data.table::rbindlist(lapply(mk, function(m) {
+    x <- r$daily[id == m$id & !is.na(value)][order(date)]
+    if (nrow(x) < 2) return(NULL)
+    v <- x$value[nrow(x)]; p <- x$value[nrow(x) - 1]
+    data.table::data.table(label = m$label, date = x$date[nrow(x)], v = v,
+                           digits = if (!is.null(m$digits)) m$digits else if (v >= 1000) 0 else 2,
+                           ch = if (isTRUE(m$points)) fmt_delta(v - p) else fmt_signed(100 * (v / p - 1), 2))
+  }))
+  if (!nrow(rows)) return(NULL)
+  # Date only for quotes that are not from the most common (latest common) session
+  usual <- as.Date(names(which.max(table(format(rows$date)))))
+  rows[, when := ifelse(date != usual, paste0(" (", format(date, "%d/%m"), ")"), "")]
+  paste(c("<b>Mercados del día</b>",
+          paste0(html_escape(rows$label), " ", mapply(fmt_num, rows$v, rows$digits), " ", rows$ch, rows$when)),
+        collapse = "\n")
 }
 
 section_funds <- function(r) {
@@ -56,32 +105,107 @@ section_funds <- function(r) {
   l <- ph[.N]
   ref <- function(d) { y <- ph[date <= d]; if (nrow(y)) data.table::last(y$valor) else NA_real_ }
   ytd <- ref(as.Date(paste0(format(l$date, "%Y"), "-01-01")) - 1)
-  paste0("<b>Cartera de fondos</b> (simulada con proxies)\n",
-         "Día ", fmt_signed(100 * (l$valor / ph[.N - 1, valor] - 1), 2),
-         " · Año ", fmt_signed(100 * (l$valor / ytd - 1)),
-         " · Caída desde máximo ", fmt_signed(l$caida_desde_max))
+  lines <- c("<b>Cartera de fondos</b> (simulada con proxies)",
+             paste0("Día ", fmt_signed(100 * (l$valor / ph[.N - 1, valor] - 1), 2),
+                    " · Año ", fmt_signed(100 * (l$valor / ytd - 1)),
+                    " · Caída desde máximo ", fmt_signed(l$caida_desde_max)))
+  d <- r$drift
+  if (!is.null(d) && nrow(d)) {
+    m <- d[which.max(abs(desvio_pp))]
+    lines <- c(lines, paste0("Mayor desvío del objetivo: ", html_escape(m$nombre), " ",
+                             fmt_signed(m$desvio_pp, 1, " pp"),
+                             if (any(d$fuera_de_banda)) " (fuera de banda)" else " (dentro de banda)"))
+  }
+  paste(lines, collapse = "\n")
 }
 
 section_positions <- function(r, full = FALSE) {
   s <- r$positions
   if (is.null(s) || !nrow(s)) return(NULL)
-  tot <- s[id == "total"]; p <- s[id != "total"]
+  tot <- s[id == "total"]; p <- s[id != "total" & titulos > 0]
   lines <- c("<b>Posiciones</b>",
              paste0("Valor ", fmt_eur(tot$valor_eur), " · Día ", fmt_signed(tot$var_dia_pct, 2),
                     " (", fmt_eur(tot$valor_eur * tot$var_dia_pct / (100 + tot$var_dia_pct), TRUE), ")"),
              paste0("Resultado total ", fmt_eur(tot$resultado_eur, TRUE), " (",
                     fmt_signed(tot$rentab_total_pct), ")"))
-  p <- p[titulos > 0]
-  if (!full) p <- p[order(-abs(var_dia_pct))][seq_len(min(3, .N))]
-  if (nrow(p)) {
-    lines <- c(lines, if (full) "" else "Mayores movimientos del día:")
-    lines <- c(lines, if (full) paste0(
-      "• ", html_escape(p$nombre), ": ", fmt_eur(p$valor_eur), " · día ", fmt_signed(p$var_dia_pct, 2),
-      " · mes ", fmt_signed(p$var_1m_pct), " · año ", fmt_signed(p$var_anio_pct),
-      " · total ", fmt_signed(p$rentab_total_pct), " (div. ", fmt_eur(p$dividendos_eur), ")")
-    else paste0("• ", html_escape(p$nombre), " ", fmt_signed(p$var_dia_pct, 2)))
+  maxn <- if (full || is.null(r$cfg$report$max_positions)) nrow(p) else r$cfg$report$max_positions
+  p <- p[order(-abs(var_dia_pct))][seq_len(min(maxn, .N))]
+  if (nrow(p)) lines <- c(lines, paste0(
+    "• ", html_escape(p$nombre), " ", fmt_num(p$precio, 2), ccy_symbol(p$divisa),
+    " · día ", fmt_signed(p$var_dia_pct, 2),
+    if (full) paste0(" · mes ", fmt_signed(p$var_1m_pct), " · año ", fmt_signed(p$var_anio_pct)) else "",
+    " · ", fmt_eur(p$resultado_eur, TRUE), " (", fmt_signed(p$rentab_total_pct), ")",
+    " · peso ", fmt_num(p$peso_pct), " %"))
+  # Currency exposure, dividends this year, year-to-date versus MSCI World
+  cur <- s[id != "total" & titulos > 0, .(v = sum(valor_eur)), by = divisa][order(-v)]
+  if (nrow(cur)) lines <- c(lines, paste0("Divisa de cotización: ", paste0(cur$divisa, " ", fmt_num(100 * cur$v / sum(cur$v)), " %",
+                                                              collapse = " · ")))
+  yr <- format(max(s$fecha), "%Y")
+  dv <- r$dividends
+  div_y <- if (is.null(dv) || !nrow(dv)) 0 else dv[format(fecha_ex, "%Y") == yr, sum(neto_eur)]
+  lines <- c(lines, paste0("Dividendos cobrados en ", yr, ": ", fmt_num(div_y, 2), " € netos"))
+  wd <- r$daily[id == "world" & !is.na(value)][order(date)]
+  if (nrow(wd)) {
+    ref <- wd[date < as.Date(paste0(yr, "-01-01")), data.table::last(value)]
+    if (length(ref)) lines <- c(lines, paste0("Año: posiciones ", fmt_signed(tot$var_anio_pct),
+                                              " · MSCI World ", fmt_signed(100 * (data.table::last(wd$value) / ref - 1)),
+                                              " <i>(precio, sin dividendos de las posiciones)</i>"))
   }
   paste(lines, collapse = "\n")
+}
+
+# Personal alerts: unusual daily move (GARCH), fall from the high since purchase, price
+# below the average purchase price, fund portfolio outside its rebalancing band.
+# Returns clave (for "nueva" tagging against the previous run) and text.
+build_alerts <- function(r) {
+  a <- r$cfg$report$alerts
+  empty <- data.table::data.table(grupo = character(), clave = character(), texto = character())
+  if (is.null(a)) return(empty)
+  out <- list()
+  s <- r$positions[id != "total" & titulos > 0]
+  g <- r$forecast$garch$table
+  if (!is.null(g) && nrow(g) && nrow(s)) {
+    z <- g[id %in% s$id & abs(z_ultimo) > a$z_move][s, on = "id", nomatch = 0]
+    if (nrow(z)) out$z <- data.table::data.table(
+      grupo = z$nombre, clave = paste0("mov|", z$id),
+      texto = paste0(fmt_signed(z$var_dia_pct, 2), " en el día, ", fmt_num(abs(z$z_ultimo), 1),
+                     " desviaciones típicas (movimiento inusual)"))
+  }
+  if (nrow(s)) {
+    dd <- s[caida_max_pct > a$drawdown]
+    if (nrow(dd)) out$dd <- data.table::data.table(
+      grupo = dd$nombre, clave = paste0("dd|", dd$id),
+      texto = paste0(fmt_signed(-dd$caida_max_pct), " desde su máximo desde la compra"))
+    if (isTRUE(a$below_cost)) {
+      bc <- s[!is.na(precio_medio_eur) & valor_eur / titulos < precio_medio_eur]
+      if (nrow(bc)) out$bc <- data.table::data.table(
+        grupo = bc$nombre, clave = paste0("coste|", bc$id),
+        texto = paste0("por debajo de su precio medio de compra (", fmt_num(bc$valor_eur / bc$titulos, 2),
+                       " € frente a ", fmt_num(bc$precio_medio_eur, 2), " €)"))
+    }
+  }
+  d <- r$drift
+  if (!is.null(d) && any(d$fuera_de_banda)) {
+    fb <- d[fuera_de_banda == TRUE]
+    out$band <- data.table::data.table(
+      grupo = fb$nombre, clave = paste0("banda|", fb$fondo),
+      texto = paste0(fmt_signed(fb$desvio_pp, 1, " pp"),
+                     " respecto al objetivo (banda ±", r$pf$rebalance$band_pp, " pp)",
+                     if (is.na(fb$desde[1])) "" else paste0(", estimado desde ", format(fb$desde[1], "%d/%m/%Y"))))
+  }
+  res <- data.table::rbindlist(out)
+  if (!nrow(res)) empty else res
+}
+
+# One line per position or fund; conditions not present in the previous run are marked new
+section_alerts <- function(alerts, prev = NULL) {
+  if (is.null(alerts) || !nrow(alerts)) return(NULL)
+  a <- data.table::copy(alerts)
+  a[, nueva := if (is.null(prev) || !nrow(prev)) FALSE else !clave %in% prev$clave]
+  a[, texto := paste0(texto, ifelse(nueva, " <b>(nueva)</b>", ""))]
+  g <- a[, .(texto = paste(texto, collapse = " · ")), by = grupo]
+  paste(c("⚠️ <b>Alertas</b>", paste0("• ", html_escape(g$grupo), ": ", g$texto)),
+        collapse = "\n")
 }
 
 # Dividends not reported before (keys stored in the state folder). Without state (first
@@ -132,7 +256,10 @@ section_rebalance <- function(r) {
 section_garch <- function(r, full = FALSE) {
   g <- r$forecast$garch$table
   if (is.null(g) || !nrow(g)) return(NULL)
-  if (!full) g <- g[serie == "Cartera actual"]
+  g <- data.table::copy(g)[, serie := data.table::fcase(
+    serie == "Cartera actual", "Cartera de fondos (actual)",
+    serie == "Cartera objetivo", "Cartera de fondos (objetivo)", default = serie)]
+  if (!full) g <- g[serie == "Cartera de fondos (actual)"]
   if (!nrow(g)) return(NULL)
   paste(c("<b>Volatilidad (GARCH)</b>",
           paste0("• ", html_escape(g$serie), ": ", fmt_num(g$vol_anual_pct, 1), " % anual (percentil ",
@@ -171,16 +298,20 @@ section_capm <- function(r) {
                  fmt_signed(c$alfa_anual_pct), " anual · R² ", fmt_num(c$r2, 2))), collapse = "\n")
 }
 
-build_daily_report <- function(r, prev_signals = NULL, new_divs = NULL) {
+build_daily_report <- function(r, prev_signals = NULL, new_divs = NULL, alerts = NULL,
+                               prev_alerts = NULL) {
   parts <- c(report_header("Monitor de riesgo · resumen diario", r),
-             section_stale(r), section_signals(r, prev_signals), section_funds(r),
-             section_positions(r), section_dividends(new_divs), section_garch(r))
+             section_stale(r), section_alerts(alerts, prev_alerts), section_signals(r, prev_signals),
+             section_markets(r), section_funds(r), section_positions(r),
+             section_dividends(new_divs), section_garch(r))
   paste(parts[!is.na(parts) & nzchar(parts)], collapse = "\n\n")
 }
 
-build_weekly_report <- function(r, prev_signals = NULL, new_divs = NULL) {
+build_weekly_report <- function(r, prev_signals = NULL, new_divs = NULL, alerts = NULL,
+                                prev_alerts = NULL) {
   parts <- c(report_header("Monitor de riesgo · informe semanal", r),
-             section_stale(r), section_regime(r), section_signals(r, prev_signals, full = TRUE),
+             section_stale(r), section_alerts(alerts, prev_alerts), section_regime(r),
+             section_signals(r, prev_signals, full = TRUE), section_markets(r),
              section_funds(r), section_scenarios(r), section_rebalance(r),
              section_positions(r, full = TRUE), section_dividends(new_divs),
              section_bootstrap(r), section_logit(r), section_capm(r), section_garch(r, full = TRUE))

@@ -132,8 +132,11 @@ position_summary <- function(positions, pdata, hist) {
     l <- data.table::last(x); d <- l$date
     ytd_ref <- last_on(x, as.Date(paste0(format(d, "%Y"), "-01-01")) - 1)
     data.table::data.table(
-      id = p$id, nombre = p$name, fecha = d, titulos = l$titulos, precio = l$precio,
+      id = p$id, nombre = p$name, fecha = d, divisa = quote_ccy(p$currency),
+      titulos = l$titulos, precio = l$precio,
       valor_eur = l$valor_eur, coste_eur = b$cost,
+      precio_medio_eur = if (b$shares > 0) b$cost / b$shares else NA_real_,
+      caida_max_pct = 100 * (1 - l$unidad_eur / max(x$unidad_eur)),   # from high since purchase
       plusvalia_latente_eur = l$valor_eur - b$cost, plusvalia_realizada_eur = b$realised,
       dividendos_eur = l$dividendos_eur, resultado_eur = l$resultado_eur,
       rentab_total_pct = 100 * l$resultado_eur / l$invertido_eur,
@@ -143,15 +146,18 @@ position_summary <- function(positions, pdata, hist) {
   })
   s <- data.table::rbindlist(rows)
   if (!nrow(s)) return(s)
-  # Total: day change of the open positions, weighted by value
-  tot <- s[, .(id = "total", nombre = "Total", fecha = max(fecha), titulos = NA_real_,
-               precio = NA_real_, valor_eur = sum(valor_eur), coste_eur = sum(coste_eur),
+  s[, peso_pct := 100 * valor_eur / sum(valor_eur)]
+  # Total: changes of the open positions, weighted by value (price only, no dividends)
+  wavg <- function(v, w) { ok <- !is.na(v) & w > 0; if (any(ok)) sum(v[ok] * w[ok]) / sum(w[ok]) else NA_real_ }
+  tot <- s[, .(id = "total", nombre = "Total", fecha = max(fecha), divisa = NA_character_,
+               titulos = NA_real_, precio = NA_real_, valor_eur = sum(valor_eur),
+               coste_eur = sum(coste_eur), precio_medio_eur = NA_real_, caida_max_pct = NA_real_,
                plusvalia_latente_eur = sum(plusvalia_latente_eur),
                plusvalia_realizada_eur = sum(plusvalia_realizada_eur),
                dividendos_eur = sum(dividendos_eur), resultado_eur = sum(resultado_eur),
                rentab_total_pct = NA_real_,
-               var_dia_pct = sum(valor_eur * var_dia_pct, na.rm = TRUE) / sum(valor_eur),
-               var_1m_pct = NA_real_, var_anio_pct = NA_real_)]
+               var_dia_pct = wavg(var_dia_pct, valor_eur), var_1m_pct = wavg(var_1m_pct, valor_eur),
+               var_anio_pct = wavg(var_anio_pct, valor_eur), peso_pct = 100)]
   inv <- hist[, .SD[.N], by = id][, sum(invertido_eur)]
   tot[, rentab_total_pct := 100 * resultado_eur / inv]
   rbind(s, tot)

@@ -24,7 +24,8 @@ signal_table <- function(daily, cfg) {
       if (last_v <= s$red) "Rojo" else if (last_v <= s$amber) "Ámbar" else "Verde"
     }
     data.table::data.table(
-      id = s$id, senal = s$label, fecha = last_d, valor = last_v,
+      id = s$id, senal = s$label, direccion = s$direction, fecha = last_d, valor = last_v,
+      cambio_1d = if (nrow(x) > 1) last_v - x$value[nrow(x) - 1] else NA_real_,
       cambio_1m = last_v - val_at(30), cambio_3m = last_v - val_at(91),
       percentil_hist = last_percentile(x$value), umbral_ambar = s$amber,
       umbral_rojo = s$red, estado = status)

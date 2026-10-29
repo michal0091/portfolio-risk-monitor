@@ -51,3 +51,32 @@ test_that("send_report in dry-run writes the file and sends nothing", {
   expect_false(send_report("<b>hola</b>", "test", c2, dry_run = TRUE))
   expect_equal(readLines(file.path(tempdir(), "report_test.html")), "<b>hola</b>")
 })
+
+test_that("fmt_delta shows direction arrows", {
+  expect_equal(fmt_delta(c(0.061, -0.2, 0, NA)), c("▲0,06", "▼0,20", "=", ""))
+})
+
+test_that("signal_distance measures the gap to the next threshold", {
+  sig <- data.table::data.table(direccion = c("up", "up", "down"), estado = c("Verde", "Ámbar", "Verde"),
+                                valor = c(4.5, 5.2, 10), umbral_ambar = c(5, 5, 8), umbral_rojo = c(6, 6, 5))
+  expect_equal(signal_distance(sig), c(0.5, 0.8, 2))
+})
+
+test_that("alerts group by position and mark new conditions", {
+  r <- list(cfg = cfg, pf = pf,
+            positions = data.table::data.table(
+              id = c("a", "b", "total"), nombre = c("A", "B", "Total"), titulos = c(10, 5, NA),
+              valor_eur = c(80, 500, 580), precio_medio_eur = c(10, 90, NA),
+              caida_max_pct = c(25, 2, NA), var_dia_pct = c(-6, 1, NA)),
+            forecast = list(garch = list(table = data.table::data.table(id = c("a", "b"),
+                                                                         z_ultimo = c(-3.1, 0.4)))),
+            drift = data.table::data.table(fondo = "x", nombre = "Fondo X", desvio_pp = 1,
+                                           fuera_de_banda = FALSE, desde = as.Date(NA)))
+  al <- build_alerts(r)
+  expect_setequal(al$clave, c("mov|a", "dd|a", "coste|a"))
+  txt <- section_alerts(al, data.table::data.table(clave = c("dd|a", "coste|a")))
+  expect_equal(length(strsplit(txt, "\n")[[1]]), 2)               # title + one line for A
+  expect_match(txt, "movimiento inusual\\) <b>\\(nueva\\)</b>")
+  r2 <- r; r2$positions <- r$positions[id != "a"]
+  expect_null(section_alerts(build_alerts(r2)))
+})

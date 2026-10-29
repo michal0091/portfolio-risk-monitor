@@ -40,9 +40,11 @@ read_state <- function(name) {
 prev_sig <- read_state("signals_prev.csv")
 seen_div <- read_state("dividends_seen.csv")
 new_divs <- new_dividends(r$dividends, seen_div)
+prev_alerts <- read_state("alerts_prev.csv")
+alerts <- build_alerts(r)
 
-text <- if (kind == "daily") build_daily_report(r, prev_sig, new_divs) else
-  build_weekly_report(r, prev_sig, new_divs)
+text <- if (kind == "daily") build_daily_report(r, prev_sig, new_divs, alerts, prev_alerts) else
+  build_weekly_report(r, prev_sig, new_divs, alerts, prev_alerts)
 out <- cfg$project$output
 photos <- if (kind == "weekly") c(
   "Semáforo" = file.path(out, "signals.png"),
@@ -55,6 +57,7 @@ send_report(text, kind, cfg, photos, dry_run)
 
 # State for the next run (written only after the report went out or was saved)
 fwrite(r$signals[, .(id, estado)], file.path(state, "signals_prev.csv"))
+fwrite(alerts[, .(clave)], file.path(state, "alerts_prev.csv"))
 if (!is.null(r$dividends) && nrow(r$dividends)) {
   fwrite(unique(rbind(seen_div, data.table(clave = dividend_key(r$dividends)))),
          file.path(state, "dividends_seen.csv"))

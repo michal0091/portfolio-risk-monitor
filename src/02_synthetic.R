@@ -32,7 +32,7 @@ synthetic_daily <- function(cfg, seed = 42) {
   ser <- list(
     world = price(.08, .16, -.35, "2009-09-25"), europe = price(.07, .18, -.40, "2013-05-21"),
     em = price(.07, .22, -.45, "2014-06-02"), spx = price(.08, .17, -.35),
-    stoxx50 = price(.06, .20, -.40), sox = price(.18, .32, -.45),
+    stoxx50 = price(.06, .20, -.40), ibex = price(.05, .21, -.40), sox = price(.18, .32, -.45),
     kospi = price(.07, .24, -.50), taiex = price(.08, .22, -.45),
     nvda = price(.35, .50, -1.2, "1999-01-22"), orcl = price(.10, .30, -.60),
     crwv = price(.40, .90, -2.0, "2025-03-28"), bizd = price(.07, .15, -.25, "2013-02-12"),
@@ -44,7 +44,7 @@ synthetic_daily <- function(cfg, seed = 42) {
     bei10 = mr(2.2, .01, .02, -.8, .1), brent = mr(70, .01, 1.5, -25, 15),
     nfci = mr(-.4, .02, .03, 1.5, -1), stlfsi = mr(-.3, .02, .05, 3, -1.5),
     vix = mr(18, .05, .8, 25, 9), estr = mr(1.5, .002, .01, -1, -.6),
-    eurusd = mr(1.15, .005, .005, -.1, .85)
+    eurusd = mr(1.15, .005, .005, -.1, .85), eurusd_fx = mr(1.15, .005, .005, -.1, .85)
   )
   # Late-2026 AI/credit stress overlay so the demo dashboard shows amber/red signals
   bump <- in_win("2026-09-01", "2026-12-31")
