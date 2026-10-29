@@ -11,7 +11,9 @@ build_monthly <- function(daily) {
 label_regimes <- function(wide, cfg) {
   rg <- cfg$regimes
   w <- data.table::copy(wide)[order(m_y)]
-  infl_idx <- w[[rg$inflation_series]]
+  # Fill isolated gaps inside the series (e.g. US CPI Oct 2025, not published during the
+  # shutdown); leading/trailing NAs (months not yet released) stay NA
+  infl_idx <- zoo::na.approx(w[[rg$inflation_series]], na.rm = FALSE)
   w[, infl_yoy := 100 * (infl_idx / data.table::shift(infl_idx, 12) - 1)]
   cr <- w[[rg$credit_series]]
   w[, credit_med := zoo::rollapplyr(cr, rg$credit_tense_window, median, na.rm = TRUE,
