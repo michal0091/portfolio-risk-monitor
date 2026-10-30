@@ -399,14 +399,15 @@ build_weekly_report <- function(r, prev_signals = NULL, new_divs = NULL, alerts 
   paste(parts[!is.na(parts) & nzchar(parts)], collapse = "\n\n")
 }
 
-# Should a scheduled run send now? `cron` is the GitHub schedule that fired ("30 16 * * 1-5");
-# empty = manual or local run, always send. The cron's UTC hour must equal the wanted
-# Madrid hour minus today's UTC offset (+1 in winter, +2 in summer).
-scheduled_now <- function(cron, local_hour, now = Sys.time()) {
+# Should a run send now? `cron` is the GitHub schedule that fired; empty = manual or local
+# run, always send. GitHub can delay or drop scheduled runs, so no particular cron is relied
+# on: the first run on a report day at or after the Madrid hour sends, the others find
+# `last_sent` (Madrid date of the last report of this kind) and skip.
+should_send <- function(cron, kind, last_sent = NULL, now = Sys.time()) {
   if (!nzchar(cron)) return(TRUE)
-  utc_hour <- as.integer(strsplit(trimws(cron), "\\s+")[[1]][2])
-  offset <- as.POSIXlt(now, tz = "Europe/Madrid")$gmtoff / 3600
-  utc_hour == local_hour - offset
+  lt <- as.POSIXlt(now, tz = "Europe/Madrid")
+  on_time <- if (kind == "daily") lt$wday %in% 1:5 && lt$hour >= 18 else lt$wday == 0 && lt$hour >= 10
+  on_time && !identical(last_sent, format(now, "%Y-%m-%d", tz = "Europe/Madrid"))
 }
 
 # Split a message into chunks under Telegram's 4096-character limit, at line breaks

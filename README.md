@@ -77,7 +77,7 @@ Rscript report.R weekly --dry-run    # informe semanal con gráficos
 
 Sin credenciales, o con `--dry-run`, no se envía nada.
 
-**Envío automático con GitHub Actions** (`.github/workflows/report.yml`): laborables a las 18:30 y domingos a las 10:00, hora de Madrid. Para activarlo:
+**Envío automático con GitHub Actions** (`.github/workflows/report.yml`): laborables desde las 18:30 y domingos desde las 10:00, hora de Madrid. GitHub puede retrasar o saltarse las ejecuciones programadas, así que cada informe tiene varios crons: envía el primero que llega a partir de esa hora y los demás no hacen nada. Un envío manual cuenta como el del día. Para activarlo:
 
 1. Crea un bot con [@BotFather](https://t.me/BotFather) y guarda el token. Escríbele un mensaje al bot y obtén tu `chat_id` en `https://api.telegram.org/bot<TOKEN>/getUpdates`.
 2. Guarda los secretos en el repo (con `gh` o en *Settings → Secrets and variables → Actions*):

@@ -1,15 +1,19 @@
 # Telegram report: weekdays 18:30 and Sundays 10:00, Europe/Madrid.
-# Cron runs in UTC, so each report has a summer and a winter cron; report.R only sends
-# when the cron that fired matches the Madrid time of that day.
+# Cron runs in UTC and GitHub can delay or drop scheduled runs, so each report has several
+# crons: the first one at or after the Madrid hour sends, the later ones skip (should_send).
 # Personal data comes from secrets and never reaches the logs or any artifact.
 name: Telegram report
 
 on:
   schedule:
-    - cron: "30 16 * * 1-5"   # 18:30 Madrid in summer (UTC+2)
-    - cron: "30 17 * * 1-5"   # 18:30 Madrid in winter (UTC+1)
-    - cron: "0 8 * * 0"       # 10:00 Madrid in summer
-    - cron: "0 9 * * 0"       # 10:00 Madrid in winter
+    - cron: "37 16 * * 1-5"   # 18:37 Madrid in summer (UTC+2)
+    - cron: "37 17 * * 1-5"   # 18:37 Madrid in winter (UTC+1)
+    - cron: "37 18 * * 1-5"   # fallbacks
+    - cron: "37 19 * * 1-5"
+    - cron: "7 8 * * 0"       # 10:07 Madrid in summer
+    - cron: "7 9 * * 0"       # 10:07 Madrid in winter
+    - cron: "7 10 * * 0"      # fallbacks
+    - cron: "7 11 * * 0"
   workflow_dispatch:
     inputs:
       kind:
@@ -114,7 +118,7 @@ jobs:
           # public series: everything in data/raw except tracked positions and their FX
           # public: market series and the traffic-light state (no tracked positions or FX)
           { find data/raw -name '*.csv' ! -name 'px_*' ! -name 'div_*' ! -name 'spl_*' ! -name 'fx_*';
-            find output/state -name 'signals_prev.csv'; } | tar -czf cache/public.tar.gz -T -
+            find output/state -name 'signals_prev.csv' -o -name 'last_sent_*'; } | tar -czf cache/public.tar.gz -T -
           if [ -n "$CACHE_PASSPHRASE" ]; then
             find data/raw output/state \( -name 'px_*' -o -name 'div_*' -o -name 'spl_*' -o -name 'fx_*' -o -name 'dividends_seen.csv' -o -name 'alerts_prev.csv' \) -type f \
               | tar -cz -T - | openssl enc -aes-256-cbc -pbkdf2 -pass env:CACHE_PASSPHRASE -out cache/private.tar.gz.enc

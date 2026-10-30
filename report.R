@@ -1,7 +1,7 @@
 # Telegram report - entry point
 # Usage: Rscript report.R daily|weekly [--dry-run] [--synthetic] [--cron "<schedule>"]
-# GitHub Actions passes the schedule that fired with --cron; the report only goes out when
-# that cron matches the local Madrid time (two UTC crons cover summer and winter time).
+# GitHub Actions passes the schedule that fired with --cron: the first scheduled run after
+# the Madrid hour sends the report and the later ones skip (see should_send).
 # Prints nothing personal: public CI logs only show log_msg lines without figures.
 
 suppressPackageStartupMessages({
@@ -16,19 +16,20 @@ dry_run <- "--dry-run" %in% args
 cron <- if ("--cron" %in% args) args[match("--cron", args) + 1] else ""
 if (is.na(cron)) cron <- ""
 
-local_hour <- c(daily = 18, weekly = 10)[[kind]]
-if (!scheduled_now(cron, local_hour)) {
-  log_msg("Scheduled run skipped: this cron is not ", local_hour, ":xx in Europe/Madrid today")
-  quit(save = "no", status = 0)
-}
-
 cfg <- read_cfg()
-pf  <- read_portfolio()
-pos <- read_positions()
-if ("--synthetic" %in% args) cfg$project$use_synthetic <- TRUE
 ensure_dirs(cfg)
 state <- file.path(cfg$project$output, "state")
 dir.create(state, showWarnings = FALSE)
+sent_file <- file.path(state, paste0("last_sent_", kind, ".txt"))
+last_sent <- if (file.exists(sent_file)) readLines(sent_file, n = 1, warn = FALSE) else NULL
+if (!should_send(cron, kind, last_sent)) {
+  log_msg("Scheduled run skipped: not the time yet, or already sent today")
+  quit(save = "no", status = 0)
+}
+
+pf  <- read_portfolio()
+pos <- read_positions()
+if ("--synthetic" %in% args) cfg$project$use_synthetic <- TRUE
 
 r <- run_pipeline(cfg, pf, pos, charts = kind == "weekly",
                   forecast = if (kind == "weekly") "full" else "daily")
@@ -62,4 +63,5 @@ if (!is.null(r$dividends) && nrow(r$dividends)) {
   fwrite(unique(rbind(seen_div, data.table(clave = dividend_key(r$dividends)))),
          file.path(state, "dividends_seen.csv"))
 }
+if (!dry_run) writeLines(format(Sys.time(), "%Y-%m-%d", tz = "Europe/Madrid"), sent_file)
 log_msg("Done (", kind, ")")

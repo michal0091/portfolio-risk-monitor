@@ -16,14 +16,22 @@ test_that("split_message keeps every chunk under the limit and loses no line", {
   expect_equal(split_message("corto"), "corto")
 })
 
-test_that("scheduled_now matches the cron to Madrid time in summer and winter", {
-  summer <- as.POSIXct("2026-07-01 16:35", tz = "UTC")
-  winter <- as.POSIXct("2026-12-01 17:35", tz = "UTC")
-  expect_true(scheduled_now("30 16 * * 1-5", 18, summer))
-  expect_false(scheduled_now("30 17 * * 1-5", 18, summer))
-  expect_true(scheduled_now("30 17 * * 1-5", 18, winter))
-  expect_false(scheduled_now("30 16 * * 1-5", 18, winter))
-  expect_true(scheduled_now("", 18, winter))                 # manual / local run
+test_that("should_send sends once, on the first run after the Madrid hour", {
+  fri <- function(t) as.POSIXct(paste("2026-10-30", t), tz = "UTC")   # winter: UTC+1
+  cron <- "37 17 * * 1-5"
+  expect_false(should_send(cron, "daily", NULL, fri("16:37")))         # 17:37 Madrid, too early
+  expect_true(should_send(cron, "daily", NULL, fri("17:37")))
+  expect_true(should_send(cron, "daily", "2026-10-29", fri("20:58")))  # late run still sends
+  expect_false(should_send(cron, "daily", "2026-10-30", fri("18:37"))) # already sent today
+  expect_false(should_send(cron, "daily", NULL, as.POSIXct("2026-10-31 00:30", tz = "UTC")))  # Saturday
+  expect_false(should_send(cron, "daily", NULL, as.POSIXct("2026-10-29 23:30", tz = "UTC")))  # 00:30 Friday
+  summer <- as.POSIXct("2026-07-01 16:37", tz = "UTC")
+  expect_true(should_send(cron, "daily", NULL, summer))                # 18:37 Madrid
+  sunday <- as.POSIXct("2026-11-01 09:07", tz = "UTC")                 # 10:07 Madrid
+  expect_true(should_send("7 9 * * 0", "weekly", NULL, sunday))
+  expect_false(should_send("7 9 * * 0", "weekly", "2026-11-01", sunday))
+  expect_false(should_send("7 8 * * 0", "weekly", NULL, as.POSIXct("2026-11-01 08:07", tz = "UTC")))
+  expect_true(should_send("", "daily", "2026-10-30", fri("03:00")))    # manual run always sends
 })
 
 test_that("signal_changes reports only states that changed", {
