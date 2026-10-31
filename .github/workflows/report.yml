@@ -1,6 +1,8 @@
 # Telegram report: weekdays 18:30 and Sundays 10:00, Europe/Madrid.
 # Cron runs in UTC and GitHub can delay or drop scheduled runs, so each report has several
 # crons: the first one at or after the Madrid hour sends, the later ones skip (should_send).
+# An external scheduler can dispatch it with scheduled=true for an on-time run under the same
+# rule; a manual dispatch always sends.
 # Personal data comes from secrets and never reaches the logs or any artifact.
 name: Telegram report
 
@@ -25,6 +27,10 @@ on:
         description: "Dry run (build the report but do not send it)"
         type: boolean
         default: false
+      scheduled:
+        description: "Apply the schedule rule (for an external scheduler)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -44,6 +50,7 @@ jobs:
       EVENT_SCHEDULE: ${{ github.event.schedule }}
       INPUT_KIND: ${{ inputs.kind }}
       INPUT_DRY_RUN: ${{ inputs.dry_run }}
+      INPUT_SCHEDULED: ${{ inputs.scheduled }}
     steps:
       - uses: actions/checkout@v4
 
@@ -66,7 +73,11 @@ jobs:
             echo "cron=$EVENT_SCHEDULE" >> "$GITHUB_OUTPUT"
           else
             echo "kind=$INPUT_KIND" >> "$GITHUB_OUTPUT"
-            echo "cron=" >> "$GITHUB_OUTPUT"
+            if [ "$INPUT_SCHEDULED" = "true" ]; then
+              echo "cron=external" >> "$GITHUB_OUTPUT"
+            else
+              echo "cron=" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
       # Data cache: keeps the accumulated history of data/raw between runs. In a public
