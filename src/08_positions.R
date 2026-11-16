@@ -145,6 +145,7 @@ position_summary <- function(positions, pdata, hist) {
     ytd_ref <- last_on(u, as.Date(paste0(format(d, "%Y"), "-01-01")) - 1)
     data.table::data.table(
       id = p$id, nombre = p$name, fecha = d, divisa = quote_ccy(p$currency),
+      estrategia = if (is.null(p$strategy)) "tactical" else p$strategy,
       titulos = l$titulos, precio = l$precio,
       valor_eur = l$valor_eur, coste_eur = b$cost,
       precio_medio_eur = if (b$shares > 0) b$cost / b$shares else NA_real_,
@@ -162,7 +163,7 @@ position_summary <- function(positions, pdata, hist) {
   # Total: changes of the open positions, weighted by value (price only, no dividends)
   wavg <- function(v, w) { ok <- !is.na(v) & w > 0; if (any(ok)) sum(v[ok] * w[ok]) / sum(w[ok]) else NA_real_ }
   tot <- s[, .(id = "total", nombre = "Total", fecha = max(fecha), divisa = NA_character_,
-               titulos = NA_real_, precio = NA_real_, valor_eur = sum(valor_eur),
+               estrategia = NA_character_, titulos = NA_real_, precio = NA_real_, valor_eur = sum(valor_eur),
                coste_eur = sum(coste_eur), precio_medio_eur = NA_real_, caida_max_pct = NA_real_,
                plusvalia_latente_eur = sum(plusvalia_latente_eur),
                plusvalia_realizada_eur = sum(plusvalia_realizada_eur),
