@@ -176,13 +176,30 @@ position_summary <- function(positions, pdata, hist) {
   rbind(s, tot)
 }
 
-# Full price history of each position in EUR per share (before and after purchase), for
-# GARCH, CAPM and risk contribution
+# Dividend-adjusted close: each price is scaled by (1 - dividend / previous close) for
+# every later ex-date, so the last value is today's price and the series has no fall on
+# ex-dividend days (same basis as Yahoo's adjusted close)
+adjust_dividends <- function(px, divs) {
+  f <- rep(1, nrow(px))
+  for (i in seq_len(nrow(divs))) {
+    before <- px$date < divs$date[i]
+    if (!any(before)) next
+    prev <- px$precio[max(which(before))]
+    if (is.finite(prev) && prev > divs$value[i]) f[before] <- f[before] * (1 - divs$value[i] / prev)
+  }
+  px$precio * f
+}
+
+# Full price history of each position in EUR per share (before and after purchase):
+# unidad_eur is the price, unidad_tr_eur the dividend-adjusted one for GARCH, CAPM and
+# risk contribution
 position_prices <- function(positions, pdata) {
   data.table::rbindlist(lapply(positions, function(p) {
     px <- pdata[id == paste0("px_", p$id), .(date, precio = value)][order(date)]
     if (!nrow(px)) return(NULL)
-    px[, .(date, id = p$id, nombre = p$name, unidad_eur = precio * fx_at(pdata, p$currency, date))]
+    fx <- fx_at(pdata, p$currency, px$date)
+    adj <- adjust_dividends(px, pdata[id == paste0("div_", p$id)][order(date)])
+    px[, .(date, id = p$id, nombre = p$name, unidad_eur = precio * fx, unidad_tr_eur = adj * fx)]
   }))
 }
 

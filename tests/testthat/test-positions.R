@@ -59,3 +59,16 @@ test_that("year-to-date change uses the price history before the purchase", {
   s <- position_summary(p3, d3, position_history(p3, d3))[id == "new"]
   expect_equal(s$var_anio_pct, 25)
 })
+
+test_that("the dividend-adjusted price has no fall on the ex-date and ends at the price", {
+  d <- as.Date("2024-01-01") + 0:3
+  p <- list(list(id = "d", name = "D", ticker = "D", type = "stock", currency = "EUR",
+                 lots = list(list(date = "2024-01-01", shares = 1, price = 100))))
+  pd <- data.table::rbindlist(list(
+    data.table::data.table(date = d, id = "px_d", value = c(100, 100, 95, 95)),      # ex-date: -5
+    data.table::data.table(date = d[3], id = "div_d", value = 5)))
+  pp <- position_prices(p, pd)
+  expect_equal(pp$unidad_eur, c(100, 100, 95, 95))
+  expect_equal(pp$unidad_tr_eur, c(95, 95, 95, 95))
+  expect_equal(position_prices(p, pd[id == "px_d"])$unidad_tr_eur, c(100, 100, 95, 95))   # no dividends
+})
