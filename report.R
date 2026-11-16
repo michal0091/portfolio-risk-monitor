@@ -1,5 +1,6 @@
 # Telegram report - entry point
-# Usage: Rscript report.R daily|weekly [--dry-run] [--synthetic] [--cron "<schedule>"]
+# Usage: Rscript report.R daily|weekly|monthly [--dry-run] [--synthetic] [--cron "<schedule>"]
+# monthly = weekly content plus the models (bootstrap, logit, CAPM, full GARCH)
 # GitHub Actions passes the schedule that fired with --cron: the first scheduled run after
 # the Madrid hour sends the report and the later ones skip (see should_send).
 # Prints nothing personal: public CI logs only show log_msg lines without figures.
@@ -10,8 +11,8 @@ suppressPackageStartupMessages({
 for (f in sort(list.files("src", pattern = "\\.R$", full.names = TRUE))) source(f)
 
 args <- commandArgs(trailingOnly = TRUE)
-kind <- if (length(args) && args[1] %in% c("daily", "weekly")) args[1] else
-  stop("usage: Rscript report.R daily|weekly [--dry-run] [--synthetic] [--cron \"<schedule>\"]")
+kind <- if (length(args) && args[1] %in% c("daily", "weekly", "monthly")) args[1] else
+  stop("usage: Rscript report.R daily|weekly|monthly [--dry-run] [--synthetic] [--cron \"<schedule>\"]")
 dry_run <- "--dry-run" %in% args
 cron <- if ("--cron" %in% args) args[match("--cron", args) + 1] else ""
 if (is.na(cron)) cron <- ""
@@ -31,8 +32,8 @@ pf  <- read_portfolio()
 pos <- read_positions()
 if ("--synthetic" %in% args) cfg$project$use_synthetic <- TRUE
 
-r <- run_pipeline(cfg, pf, pos, charts = kind == "weekly",
-                  forecast = if (kind == "weekly") "full" else "daily")
+r <- run_pipeline(cfg, pf, pos, charts = kind != "daily",
+                  forecast = if (kind == "monthly") "full" else "daily")
 
 read_state <- function(name) {
   f <- file.path(state, name)
@@ -44,16 +45,16 @@ new_divs <- new_dividends(r$dividends, seen_div)
 prev_alerts <- read_state("alerts_prev.csv")
 alerts <- build_alerts(r)
 
-text <- if (kind == "daily") build_daily_report(r, prev_sig, new_divs, alerts, prev_alerts) else
-  build_weekly_report(r, prev_sig, new_divs, alerts, prev_alerts)
+build <- switch(kind, daily = build_daily_report, weekly = build_weekly_report, monthly = build_monthly_report)
+text <- build(r, prev_sig, new_divs, alerts, prev_alerts)
 out <- cfg$project$output
-photos <- if (kind == "weekly") c(
+photos <- if (kind == "daily") character() else c(
   "Semáforo" = file.path(out, "signals.png"),
   "Cartera de fondos" = file.path(out, "portfolio.png"),
   "Posiciones" = file.path(out, "positions.png"),
   "Escenarios" = file.path(out, "scenarios.png"),
-  "Riesgo de caída (bootstrap)" = file.path(out, "bootstrap.png"),
-  "Volatilidad (GARCH)" = file.path(out, "garch.png")) else character()
+  if (kind == "monthly") c("Riesgo de caída (bootstrap)" = file.path(out, "bootstrap.png"),
+                           "Volatilidad (GARCH)" = file.path(out, "garch.png")))
 send_report(text, kind, cfg, photos, dry_run)
 
 # State for the next run (written only after the report went out or was saved)

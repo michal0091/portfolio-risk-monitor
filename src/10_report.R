@@ -1,6 +1,7 @@
 # Telegram reports (HTML parse mode) ---------------------------------------------------
 # Daily: traffic light + changes, fund portfolio, positions, new dividends.
-# Weekly: daily content plus regime, scenarios, rebalance, full positions and charts.
+# Weekly: decision header, regime, scenarios, rebalance, full positions, stress and charts.
+# Monthly (first Sunday): the weekly content plus the models (bootstrap, logit, CAPM, GARCH).
 
 html_escape <- function(x) {
   x <- gsub("&", "&amp;", x, fixed = TRUE)
@@ -80,13 +81,16 @@ section_signals <- function(r, prev, full = FALSE) {
   paste(lines, collapse = "\n")
 }
 
-section_markets <- function(r) {
+# weekly = TRUE: change over the last 7 days instead of versus the previous close
+section_markets <- function(r, weekly = FALSE) {
   mk <- r$cfg$report$markets
   if (is.null(mk)) return(NULL)
   rows <- data.table::rbindlist(lapply(mk, function(m) {
     x <- r$daily[id == m$id & !is.na(value)][order(date)]
     if (nrow(x) < 2) return(NULL)
-    v <- x$value[nrow(x)]; p <- x$value[nrow(x) - 1]
+    v <- x$value[nrow(x)]
+    p <- if (weekly) data.table::last(x[date <= x$date[nrow(x)] - 7, value]) else x$value[nrow(x) - 1]
+    if (!length(p)) return(NULL)
     data.table::data.table(label = m$label, date = x$date[nrow(x)], v = v,
                            digits = if (!is.null(m$digits)) m$digits else if (v >= 1000) 0 else 2,
                            ch = if (isTRUE(m$points)) fmt_delta(v - p) else fmt_signed(100 * (v / p - 1), 2))
@@ -95,7 +99,7 @@ section_markets <- function(r) {
   # Date only for quotes that are not from the most common (latest common) session
   usual <- as.Date(names(which.max(table(format(rows$date)))))
   rows[, when := ifelse(date != usual, paste0(" (", format(date, "%d/%m"), ")"), "")]
-  paste(c("<b>Mercados del día</b>",
+  paste(c(if (weekly) "<b>Mercados de la semana</b> (variación en 7 días)" else "<b>Mercados del día</b>",
           paste0(html_escape(rows$label), " ", mapply(fmt_num, rows$v, rows$digits), " ", rows$ch, rows$when)),
         collapse = "\n")
 }
@@ -140,7 +144,9 @@ section_positions <- function(r, full = FALSE) {
              paste0("Valor ", fmt_eur(tot$valor_eur), " · Día ", fmt_signed(tot$var_dia_pct, 2),
                     " (", fmt_eur(tot$valor_eur * tot$var_dia_pct / (100 + tot$var_dia_pct), TRUE), ")"),
              paste0("Resultado total ", fmt_eur(tot$resultado_eur, TRUE), " (",
-                    fmt_signed(tot$rentab_total_pct), ")"))
+                    fmt_signed(tot$rentab_total_pct), ")",
+                    if (full && "tir_anual_pct" %in% names(tot) && !is.na(tot$tir_anual_pct))
+                      paste0(" · TIR ", fmt_signed(tot$tir_anual_pct), " anual") else ""))
   maxn <- if (full || is.null(r$cfg$report$max_positions)) nrow(p) else r$cfg$report$max_positions
   p <- p[order(-abs(var_dia_pct))][seq_len(min(maxn, .N))]
   if (nrow(p)) lines <- c(lines, paste0(
@@ -148,6 +154,7 @@ section_positions <- function(r, full = FALSE) {
     " · día ", fmt_signed(p$var_dia_pct, 2),
     if (full) paste0(" · mes ", fmt_signed(p$var_1m_pct), " · año ", fmt_signed(p$var_anio_pct)) else "",
     " · ", fmt_eur(p$resultado_eur, TRUE), " (", fmt_signed(p$rentab_total_pct), ")",
+    if (full && "tir_anual_pct" %in% names(p)) ifelse(is.na(p$tir_anual_pct), "", paste0(" · TIR ", fmt_signed(p$tir_anual_pct), " anual")) else "",
     " · peso ", fmt_num(p$peso_pct), " %"))
   # Currency exposure, dividends this year, year-to-date versus MSCI World
   cur <- s[id != "total" & titulos > 0, .(v = sum(valor_eur)), by = divisa][order(-v)]
@@ -160,9 +167,11 @@ section_positions <- function(r, full = FALSE) {
   wd <- r$daily[id == "world" & !is.na(value)][order(date)]
   if (nrow(wd)) {
     ref <- wd[date < as.Date(paste0(yr, "-01-01")), data.table::last(value)]
-    if (length(ref)) lines <- c(lines, paste0("Año: posiciones ", fmt_signed(tot$var_anio_pct),
+    tr <- "var_anio_tr_pct" %in% names(tot) && !is.na(tot$var_anio_tr_pct)
+    if (length(ref)) lines <- c(lines, paste0("Año: posiciones ", fmt_signed(if (tr) tot$var_anio_tr_pct else tot$var_anio_pct),
                                               " · MSCI World ", fmt_signed(100 * (data.table::last(wd$value) / ref - 1)),
-                                              " <i>(precio, sin dividendos de las posiciones)</i>"))
+                                              if (tr) " <i>(rentabilidad total en ambos, cartera de hoy)</i>"
+                                              else " <i>(precio, sin dividendos de las posiciones)</i>"))
   }
   paste(lines, collapse = "\n")
 }
@@ -176,7 +185,7 @@ plan_label <- function(pf) {
 
 # Personal alerts: unusual daily move (GARCH), fall from the high since purchase, total
 # return (dividends and sales included) below -total_loss %, fund portfolio outside its
-# rebalancing band. Positions with strategy "core" raise none of the price alerts. While a
+# rebalancing band. Positions with strategy "core" only raise the unusual move. While a
 # rebalance plan is active the band alert is replaced by one when the next tranche is due.
 # Returns clave (for "nueva" tagging against the previous run) and text.
 build_alerts <- function(r, today = Sys.Date()) {
@@ -185,7 +194,6 @@ build_alerts <- function(r, today = Sys.Date()) {
   if (is.null(a)) return(empty)
   out <- list()
   s <- r$positions[id != "total" & titulos > 0]
-  if ("estrategia" %in% names(s)) s <- s[is.na(estrategia) | estrategia != "core"]
   g <- r$forecast$garch$table
   if (!is.null(g) && nrow(g) && nrow(s)) {
     z <- g[id %in% s$id & abs(z_ultimo) > a$z_move][s, on = "id", nomatch = 0]
@@ -194,6 +202,8 @@ build_alerts <- function(r, today = Sys.Date()) {
       texto = paste0(fmt_signed(z$var_dia_pct, 2), " en el día, ", fmt_num(abs(z$z_ultimo), 1),
                      " desviaciones típicas (movimiento inusual)"))
   }
+  # core positions: the one-day move above still alerts; the standing conditions below do not
+  if ("estrategia" %in% names(s)) s <- s[is.na(estrategia) | estrategia != "core"]
   if (nrow(s)) {
     dd <- s[caida_max_pct > a$drawdown]
     if (nrow(dd)) out$dd <- data.table::data.table(
@@ -464,6 +474,27 @@ section_capm <- function(r) {
                  " · ", alfa, " · R² ", fmt_num(c$r2, 2))), collapse = "\n")
 }
 
+# Three lines to act on: action, next milestone of the plan, main change since last report
+section_decision <- function(r, prev_signals = NULL, alerts = NULL, prev_alerts = NULL, today = Sys.Date()) {
+  ps <- plan_status(r$pf); d <- r$drift
+  out_band <- !is.null(d) && any(d$fuera_de_banda)
+  due <- ps$active && !is.na(ps$next_date) && ps$next_date <= today
+  action <- if (due) paste0("ejecutar el tramo ", ps$next_n, " de ", ps$total, " del rebalanceo")
+    else if (!ps$active && out_band) paste0("rebalancear: ", paste(html_escape(d[fuera_de_banda == TRUE, nombre]), collapse = ", "), " fuera de banda")
+    else "ninguna"
+  nxt <- if (!ps$active) "sin plan de rebalanceo en curso"
+    else if (is.na(ps$next_date)) paste0("tramo ", ps$next_n, " de ", ps$total, ", sin fecha")
+    else paste0("tramo ", ps$next_n, " de ", ps$total, " el ", format(ps$next_date, "%d/%m/%Y"),
+                if (due) "" else paste0(" (faltan ", as.numeric(ps$next_date - today), " días)"))
+  ch <- signal_changes(r$signals, prev_signals)
+  new_al <- if (is.null(alerts) || !nrow(alerts) || is.null(prev_alerts) || !nrow(prev_alerts)) 0 else sum(!alerts$clave %in% prev_alerts$clave)
+  change <- if (nrow(ch)) paste0(html_escape(ch$senal[1]), " pasa de ", ch$antes[1], " a ", ch$ahora[1],
+                                 if (nrow(ch) > 1) paste0(" (y ", nrow(ch) - 1, " señales más)") else "")
+    else if (new_al > 0) paste0(new_al, if (new_al == 1) " alerta nueva" else " alertas nuevas")
+    else "sin cambios en el semáforo ni alertas nuevas"
+  paste0("<b>Acción:</b> ", action, "\n<b>Próximo hito:</b> ", nxt, "\n<b>Cambio clave:</b> ", change)
+}
+
 build_daily_report <- function(r, prev_signals = NULL, new_divs = NULL, alerts = NULL,
                                prev_alerts = NULL) {
   parts <- c(report_header("Monitor de riesgo · resumen diario", r),
@@ -473,16 +504,21 @@ build_daily_report <- function(r, prev_signals = NULL, new_divs = NULL, alerts =
   paste(parts[!is.na(parts) & nzchar(parts)], collapse = "\n\n")
 }
 
+# What to do and where things stand; the models go in the monthly report
 build_weekly_report <- function(r, prev_signals = NULL, new_divs = NULL, alerts = NULL,
-                                prev_alerts = NULL) {
-  parts <- c(report_header("Monitor de riesgo · informe semanal", r),
+                                prev_alerts = NULL, monthly = FALSE) {
+  parts <- c(report_header(if (monthly) "Monitor de riesgo · informe mensual" else "Monitor de riesgo · informe semanal", r),
+             section_decision(r, prev_signals, alerts, prev_alerts),
              section_stale(r), section_alerts(alerts, prev_alerts), section_regime(r),
-             section_signals(r, prev_signals, full = TRUE), section_markets(r),
+             section_signals(r, prev_signals, full = TRUE), section_markets(r, weekly = TRUE),
              section_funds(r), section_scenarios(r), section_rebalance(r),
-             section_positions(r, full = TRUE), section_dividends(new_divs),
-             section_bootstrap(r), section_stress(r), section_logit(r), section_capm(r), section_garch(r, full = TRUE))
+             section_positions(r, full = TRUE), section_dividends(new_divs), section_stress(r),
+             if (monthly) c(section_bootstrap(r), section_logit(r), section_capm(r)),
+             section_garch(r, full = monthly))
   paste(parts[!is.na(parts) & nzchar(parts)], collapse = "\n\n")
 }
+
+build_monthly_report <- function(...) build_weekly_report(..., monthly = TRUE)
 
 # Should a run send now? `cron` is the GitHub schedule that fired; empty = manual or local
 # run, always send. GitHub can delay or drop scheduled runs, so no particular cron is relied
@@ -491,6 +527,7 @@ build_weekly_report <- function(r, prev_signals = NULL, new_divs = NULL, alerts 
 should_send <- function(cron, kind, last_sent = NULL, now = Sys.time()) {
   if (!nzchar(cron)) return(TRUE)
   lt <- as.POSIXlt(now, tz = "Europe/Madrid")
+  # weekly and monthly: Sundays (the workflow picks monthly on the first Sunday of the month)
   on_time <- if (kind == "daily") lt$wday %in% 1:5 && lt$hour >= 18 else lt$wday == 0 && lt$hour >= 10
   on_time && !identical(last_sent, format(now, "%Y-%m-%d", tz = "Europe/Madrid"))
 }

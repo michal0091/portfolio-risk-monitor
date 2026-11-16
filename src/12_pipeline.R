@@ -51,8 +51,6 @@ run_pipeline <- function(cfg, pf, pos, charts = TRUE, forecast = "full") {
   fw(hint, "scenario_hint.csv")
 
   # 5. Rebalance
-  reb <- rebalance_plan(pf)
-  fw(reb, "rebalance_plan.csv")
   fw(drift, "fund_drift.csv")
   fw(glide_path(pf), "glide_path.csv")
 
@@ -81,6 +79,7 @@ run_pipeline <- function(cfg, pf, pos, charts = TRUE, forecast = "full") {
     fw(fc$garch$table, "garch.csv")
     fw(fc$garch$vol, "garch_vol.csv")
   }
+  if (!is.null(fc$stress)) fw(fc$stress$table, "stress_index.csv")
   if (!is.null(fc$bootstrap)) {
     fw(fc$bootstrap$summary, "bootstrap.csv")
     fw(fc$bootstrap$fan, "bootstrap_fan.csv")
@@ -88,7 +87,7 @@ run_pipeline <- function(cfg, pf, pos, charts = TRUE, forecast = "full") {
     fw(fc$logit$coefs, "early_warning_coefs.csv")
     fw(fc$logit$series, "early_warning_series.csv")
     fw(fc$capm, "capm.csv")
-    if (!is.null(fc$stress)) fw(fc$stress$table, "stress_index.csv")
+
     if (!is.null(fc$risk)) fw(fc$risk, "risk_contribution.csv")
   }
 
@@ -105,6 +104,6 @@ run_pipeline <- function(cfg, pf, pos, charts = TRUE, forecast = "full") {
   }
 
   list(cfg = cfg, pf = pf_in, quality = quality, freshness = fresh, daily = daily, regimes = w, drift = drift, scenarios = sc, portfolio = ph, signals = sig,
-       hint = hint, rebalance = reb, positions = pos_sum, positions_history = pos_hist,
+       hint = hint, positions = pos_sum, positions_history = pos_hist,
        dividends = divs, forecast = fc, forecast_loss = cfg$forecast$bootstrap$loss, stale = c(attr(daily, "stale"), attr(pdata, "stale")))
 }

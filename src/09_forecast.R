@@ -335,11 +335,11 @@ run_forecasts <- function(daily, w, ph, prices, pos_sum, cfg, pf, level = "full"
   if (level == "full") refs$ref_spx <- ref("spx", "S&P 500 (referencia)")   # versus VIX, weekly only
   refs <- refs[!sapply(refs, is.null)]
   out <- list(garch = garch_table(ph, prices, pos_sum, cfg, refs))   # positions too: daily move alerts
+  out$stress <- stress_index(daily, cfg)
   if (level == "full") {
     pr <- portfolio_monthly_returns(fund_monthly_returns(w, cfg), pf)
     out$bootstrap <- regime_bootstrap(pr, cfg)
     out$logit <- early_warning(daily, w, cfg)
-    out$stress <- stress_index(daily, cfg)
     out$capm <- capm_table(daily, prices, cfg)
     out$risk <- risk_contribution(prices, pos_sum, cfg)
   }

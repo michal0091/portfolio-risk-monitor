@@ -31,6 +31,8 @@ test_that("should_send sends once, on the first run after the Madrid hour", {
   expect_true(should_send("7 9 * * 0", "weekly", NULL, sunday))
   expect_false(should_send("7 9 * * 0", "weekly", "2026-11-01", sunday))
   expect_false(should_send("7 8 * * 0", "weekly", NULL, as.POSIXct("2026-11-01 08:07", tz = "UTC")))
+  expect_true(should_send("7 9 * * 0", "monthly", NULL, sunday))
+  expect_false(should_send("7 9 * * 0", "monthly", "2026-11-01", sunday))
   expect_true(should_send("", "daily", "2026-10-30", fri("03:00")))    # manual run always sends
 })
 
@@ -88,9 +90,9 @@ test_that("alerts group by position and mark new conditions", {
   expect_match(txt, "movimiento inusual\\) <b>\\(nueva\\)</b>")
   r2 <- r; r2$positions <- r$positions[id != "a"]
   expect_null(section_alerts(build_alerts(r2)))
-  # a small loss (B, -3 %) is no alert; a core position raises no price alert at all
+  # a small loss (B, -3 %) is no alert; a core position only raises the unusual move
   r3 <- r; r3$positions <- data.table::copy(r$positions)[id == "a", estrategia := "core"]
-  expect_equal(nrow(build_alerts(r3)), 0)
+  expect_equal(build_alerts(r3)$clave, "mov|a")
 })
 
 test_that("an active rebalance plan replaces the band alert", {
@@ -121,4 +123,32 @@ test_that("the scenario section leaves out the probability-weighted row", {
   expect_false(grepl("Esperado", txt))
   expect_match(txt, "Supuestos revisados el")
   expect_true("Esperado" %in% sc$scenario)                       # still in scenarios.csv
+})
+
+test_that("the decision header gives action, next milestone and main change", {
+  sig <- data.table::data.table(id = c("a", "b"), senal = c("A", "B"), estado = c("Rojo", "Verde"))
+  r <- list(pf = pf, signals = sig,
+            drift = data.table::data.table(fondo = "x", nombre = "Fondo X", fuera_de_banda = TRUE))
+  txt <- section_decision(r, today = as.Date("2026-11-16"))
+  expect_match(txt, "Acción:</b> rebalancear: Fondo X fuera de banda")
+  expect_match(txt, "sin plan de rebalanceo en curso")
+  expect_match(txt, "sin cambios en el semáforo ni alertas nuevas")
+  r$pf$rebalance_plan <- list(tranches = list(list(date = "2026-10-30", done = TRUE),
+                                              list(date = "2026-12-15", done = FALSE)))
+  prev <- data.table::data.table(id = c("a", "b"), estado = c("Ámbar", "Verde"))
+  txt <- section_decision(r, prev, today = as.Date("2026-11-16"))
+  expect_match(txt, "Acción:</b> ninguna")
+  expect_match(txt, "tramo 2 de 2 el 15/12/2026 \\(faltan 29 días\\)")
+  expect_match(txt, "A pasa de Ámbar a Rojo")
+  expect_match(section_decision(r, today = as.Date("2026-12-15")), "ejecutar el tramo 2 de 2")
+  al <- data.table::data.table(clave = c("dd|a", "mov|b"))
+  expect_match(section_decision(r, NULL, al, al[1], as.Date("2026-11-16")), "1 alerta nueva")
+})
+
+test_that("weekly markets show the change over seven days", {
+  d <- as.Date("2026-11-02") + 0:11
+  r <- list(cfg = list(report = list(markets = list(list(id = "spx", label = "S&P 500")))),
+            daily = data.table::data.table(date = d, id = "spx", value = c(rep(100, 4), 110, 110, rep(120, 5), 121)))
+  expect_match(section_markets(r, weekly = TRUE), "Mercados de la semana.*\\+10,00 %")   # 121 / 110
+  expect_match(section_markets(r), "Mercados del día.*\\+0,83 %")
 })
