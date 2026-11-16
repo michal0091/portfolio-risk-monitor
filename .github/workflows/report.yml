@@ -1,9 +1,12 @@
-# Telegram report: weekdays 18:30 and Sundays 10:00, Europe/Madrid.
+# Telegram report: weekdays 18:30 and Sundays 10:00, Europe/Madrid. Sundays send the weekly
+# report, except the first Sunday of the month, which sends the monthly one (weekly content
+# plus the models).
 # Cron runs in UTC and GitHub can delay or drop scheduled runs, so each report has several
 # crons: the first one at or after the Madrid hour sends, the later ones skip (should_send).
 # An external scheduler can dispatch it with scheduled=true for an on-time run under the same
 # rule; a manual dispatch always sends.
 # Personal data comes from secrets and never reaches the logs or any artifact.
+# Actions are pinned by commit SHA (this workflow handles secrets); the tag is in the comment.
 name: Telegram report
 
 on:
@@ -21,7 +24,7 @@ on:
       kind:
         description: "Report"
         type: choice
-        options: [daily, weekly]
+        options: [daily, weekly, monthly]
         default: daily
       dry_run:
         description: "Dry run (build the report but do not send it)"
@@ -52,13 +55,13 @@ jobs:
       INPUT_DRY_RUN: ${{ inputs.dry_run }}
       INPUT_SCHEDULED: ${{ inputs.scheduled }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
 
-      - uses: r-lib/actions/setup-r@v2
+      - uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05   # v2
         with:
           use-public-rspm: true
 
-      - uses: r-lib/actions/setup-r-dependencies@v2
+      - uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05   # v2
         with:
           cache: true
 
@@ -68,7 +71,9 @@ jobs:
           if [ "$EVENT_NAME" = "schedule" ]; then
             case "$EVENT_SCHEDULE" in
               *1-5) echo "kind=daily" >> "$GITHUB_OUTPUT" ;;
-              *)    echo "kind=weekly" >> "$GITHUB_OUTPUT" ;;
+              *)    # Sunday: monthly on the first one of the month (Madrid date), else weekly
+                    if [ "$(TZ=Europe/Madrid date +%-d)" -le 7 ]; then echo "kind=monthly" >> "$GITHUB_OUTPUT"
+                    else echo "kind=weekly" >> "$GITHUB_OUTPUT"; fi ;;
             esac
             echo "cron=$EVENT_SCHEDULE" >> "$GITHUB_OUTPUT"
           else
@@ -84,7 +89,7 @@ jobs:
       # repo a pull request from a fork can restore caches, so the personal part (prices of
       # tracked positions, report state) is only cached encrypted with CACHE_PASSPHRASE.
       - name: Restore data cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830   # v4
         with:
           path: cache
           key: data-${{ github.run_id }}
@@ -120,6 +125,22 @@ jobs:
           if [ "$INPUT_DRY_RUN" = "true" ]; then DRY="--dry-run"; fi
           Rscript report.R "$KIND" --cron "$CRON" $DRY
 
+      # Nothing arrives when the pipeline breaks, so say it. No data in the message.
+      - name: Notify failure
+        if: failure() && inputs.dry_run != true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          KIND: ${{ steps.kind.outputs.kind }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            curl -s -o /dev/null --max-time 30 "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+              --data-urlencode "text=⚠️ Monitor de riesgo: la ejecución del informe (${KIND:-sin determinar}) ha fallado. ${RUN_URL}" \
+              || echo "Failure notice could not be sent"
+          fi
+
       - name: Pack data cache
         if: always()
         env:
@@ -137,13 +158,13 @@ jobs:
 
       - name: Save data cache
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830   # v4
         with:
           path: cache
           key: data-${{ github.run_id }}
 
       - name: Keep the schedule alive
-        if: steps.kind.outputs.kind == 'weekly'
+        if: steps.kind.outputs.kind != 'daily'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/report.yml/enable"
