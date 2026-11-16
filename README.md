@@ -142,6 +142,7 @@ main.R                       punto de entrada
 | `regime_performance.csv`, `regime_transitions.csv` | rentabilidad condicionada y matriz de transición |
 | `rebalance_plan.csv`, `glide_path.csv` | traspasos por tramo y senda del bolsillo de entrada |
 | `fund_drift.csv` | pesos (y valor en euros si hay `values_eur`) estimados hoy desde `as_of`, con los movimientos de `transactions` aplicados, desvío del objetivo y traspasos |
+| `stress_index.csv` | índice de estrés actual: media de z-scores de VIX, diferencial Baa y estrés de St. Louis. Describe el presente, no predice |
 | `freshness.csv`, `data_quality.csv` | última fecha de cada serie frente a su frecuencia (marca las que han dejado de actualizarse) y valores anómalos: los saltos aislados de más del 50 % que se deshacen al día siguiente y los valores no positivos se excluyen; las variaciones diarias recientes de más del 20 % solo se avisan |
 
 ### Proxies (verificar)

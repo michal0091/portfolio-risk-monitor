@@ -284,8 +284,15 @@ section_stale <- function(r) {
 section_regime <- function(r) {
   w <- r$regimes[!is.na(regime)][order(m_y)]
   l <- data.table::last(w)
-  paste0("<b>Régimen macro</b> (", format(l$m_y, "%m/%Y"), "): ", html_escape(l$regime),
-         "\nInflación EE. UU. ", fmt_signed(l$infl_yoy), " interanual")
+  out <- paste0("<b>Régimen macro</b> (", format(l$m_y, "%m/%Y"), "): ", html_escape(l$regime),
+                "\nInflación EE. UU. ", fmt_signed(l$infl_yoy), " interanual <i>(dato de ",
+                format(l$m_y, "%m/%Y"), ")</i>")
+  if ("infl_yoy_info" %in% names(r$regimes)) {
+    e <- data.table::last(r$regimes[!is.na(infl_yoy_info)][order(m_y)])
+    if (nrow(e)) out <- paste0(out, "\nInflación zona euro ", fmt_signed(e$infl_yoy_info),
+                               " interanual <i>(dato de ", format(e$m_y, "%m/%Y"), "; no define el régimen)</i>")
+  }
+  out
 }
 
 section_scenarios <- function(r) {
@@ -349,9 +356,10 @@ section_garch <- function(r, full = FALSE) {
   keep <- if (full) g$id else c("ref_world", "Cartera actual", "posiciones")
   g <- g[id %in% keep][order(match(id, c("ref_world", "Cartera actual", "Cartera objetivo", "posiciones")))]
   if (!nrow(g)) return(NULL)
-  # Reference levels: the model's long-run volatility (unstable when shocks barely decay,
-  # so hidden beyond a one-year half-life) and the MSCI World multiple
-  g[media_vida_dias > 250, vol_largo_plazo_pct := NA_real_]
+  # Reference levels: the model's long-run volatility and half-life are not reliable when
+  # shocks barely decay (persistence >= 0.995), so both are hidden then
+  g[, persistente := is.na(persistencia) | persistencia >= .995]
+  g[persistente == TRUE, vol_largo_plazo_pct := NA_real_]
   ref_txt <- paste0(" (normal ", fmt_num(g$vol_largo_plazo_pct, 1), " %",
                     if (length(world)) ifelse(g$id == "ref_world", "",
                                               paste0(", ", fmt_num(g$vol_anual_pct / world, 1), "× MSCI World")) else "",
@@ -367,18 +375,22 @@ section_garch <- function(r, full = FALSE) {
   if (full) lines <- paste0(lines, "\n   ES 95 % 1 día ",
                             ifelse(is.na(g$valor), paste0(fmt_num(g$es95_1d_pct, 2), " %"),
                                    paste0("≈ ", fmt_eur(g$valor * g$es95_1d_pct / 100), " (", fmt_num(g$es95_1d_pct, 2), " %)")),
-                            " · un shock se reduce a la mitad en ",
-                            ifelse(g$media_vida_dias <= 250, paste0("~", fmt_num(g$media_vida_dias), " días"),
-                                   "más de un año (volatilidad muy persistente)"))
+                            ifelse(g$persistente, " · persistencia muy alta: vida media no estimable",
+                                   paste0(" · un shock se reduce a la mitad en ~", fmt_num(g$media_vida_dias), " días")))
   out <- c("<b>Volatilidad (GARCH)</b>", lines)
-  # Implied (VIX) versus model volatility of the S&P 500
+  # Implied (VIX, 30 days) versus the model's mean forecast over 21 sessions, same date
   vix <- r$daily[id == "vix" & !is.na(value)][order(date)]
+  if (full && nrow(spx) && "fecha" %in% names(spx)) vix <- vix[date <= spx$fecha]
   if (full && nrow(spx) && nrow(vix)) {
-    gap <- data.table::last(vix$value) - spx$vol_anual_pct
-    out <- c(out, paste0("VIX ", fmt_num(data.table::last(vix$value), 1), " frente a GARCH del S&P 500 ",
-                         fmt_num(spx$vol_anual_pct, 1), " %: ", fmt_delta(gap, 1), " puntos, ",
+    v <- data.table::last(vix)
+    m21 <- if ("vol_21d_pct" %in% names(spx)) spx$vol_21d_pct else spx$vol_anual_pct
+    gap <- v$value - m21
+    out <- c(out, paste0("VIX ", fmt_num(v$value, 1), " (", format(v$date, "%d/%m"), ") frente a GARCH del S&P 500 a 21 sesiones ",
+                         fmt_num(m21, 1), " %",
+                         if ("vol_realizada_21d_pct" %in% names(spx)) paste0(" (realizada 21 sesiones ", fmt_num(spx$vol_realizada_21d_pct, 1), " %)") else "",
+                         ": ", fmt_delta(gap, 1), " puntos, ",
                          if (gap > 6) "el mercado paga mucha más protección de la que justifican los precios (miedo anticipado)"
-                         else if (gap < 0) "el mercado espera menos agitación de la que muestran los precios (complacencia)"
+                         else if (gap < 0) "el mercado espera menos agitación de la que muestran los precios (complacencia, o el modelo aún pesa una caída reciente)"
                          else "prima habitual (el VIX suele ir 3-4 puntos por encima)"))
   }
   rc <- r$forecast$risk
@@ -416,19 +428,40 @@ section_logit <- function(r) {
   if (is.null(m)) return(NULL)
   if (!logit_useful(m)) return(paste0(
     "<b>Alerta temprana (logit)</b>\nModelo sin capacidad predictiva fuera de muestra (AUC ",
-    fmt_num(m$auc_oos, 2), "): no se publica la probabilidad"))
+    fmt_num(m$auc_oos, 2),
+    if (!is.null(m$episodios_oos)) paste0("; anticipó ", m$episodios_anticipados, " de ", m$episodios_oos, " episodios de caída") else "",
+    "): no se publica la probabilidad"))
   paste0("<b>Alerta temprana (logit)</b>\nP(caída fuerte de la bolsa en 6 meses): ",
          fmt_num(m$prob_actual, 1), " %\nFuera de muestra: AUC ", fmt_num(m$auc_oos, 2),
          " · Brier ", fmt_num(m$brier_oos, 3), " (frecuencia histórica ", fmt_num(m$brier_clima, 3),
          ", ", m$eventos_oos, " meses con caída)")
 }
 
+# Current stress (nowcast): mean z-score of long-history stress measures
+section_stress <- function(r) {
+  st <- r$forecast$stress
+  if (is.null(st)) return(NULL)
+  t <- st$table; lab <- r$signals[, stats::setNames(senal, id)]
+  lab <- c(lab, baa10y = "Diferencial Baa - bono 10 años")
+  nm <- ifelse(st$parts$id %in% names(lab), lab[st$parts$id], st$parts$id)
+  paste0("<b>Estrés actual</b> (índice, no es una previsión)\n", fmt_signed(t$indice, 2, ""),
+         " desviaciones típicas sobre su media desde ", format(t$desde, "%Y"), " (percentil ", fmt_num(t$percentil),
+         "; hace un mes ", fmt_signed(t$hace_1m, 2, ""), ", hace tres ", fmt_signed(t$hace_3m, 2, ""), ")\n",
+         paste0(html_escape(nm), " ", fmt_signed(st$parts$z, 1, ""), collapse = " · "))
+}
+
+# Beta with its 95 % interval; alpha only when its interval excludes zero
 section_capm <- function(r) {
   c <- r$forecast$capm
   if (is.null(c) || !nrow(c)) return(NULL)
-  paste(c("<b>CAPM frente al MSCI World</b> (36 meses)",
-          paste0("• ", html_escape(c$nombre), ": beta ", fmt_num(c$beta, 2), " · alfa ",
-                 fmt_signed(c$alfa_anual_pct), " anual · R² ", fmt_num(c$r2, 2))), collapse = "\n")
+  ci <- "beta_inf" %in% names(c)
+  alfa <- if (ci) ifelse(c$alfa_inf > 0 | c$alfa_sup < 0, paste0("alfa ", fmt_signed(c$alfa_anual_pct), " anual"),
+                         "alfa no significativo")
+          else paste0("alfa ", fmt_signed(c$alfa_anual_pct), " anual")
+  paste(c("<b>CAPM frente al MSCI World</b> (mensual, intervalo al 95 %)",
+          paste0("• ", html_escape(c$nombre), " (", c$meses, " meses): beta ", fmt_num(c$beta, 2),
+                 if (ci) paste0(" [", fmt_num(c$beta_inf, 2), " a ", fmt_num(c$beta_sup, 2), "]") else "",
+                 " · ", alfa, " · R² ", fmt_num(c$r2, 2))), collapse = "\n")
 }
 
 build_daily_report <- function(r, prev_signals = NULL, new_divs = NULL, alerts = NULL,
@@ -447,7 +480,7 @@ build_weekly_report <- function(r, prev_signals = NULL, new_divs = NULL, alerts 
              section_signals(r, prev_signals, full = TRUE), section_markets(r),
              section_funds(r), section_scenarios(r), section_rebalance(r),
              section_positions(r, full = TRUE), section_dividends(new_divs),
-             section_bootstrap(r), section_logit(r), section_capm(r), section_garch(r, full = TRUE))
+             section_bootstrap(r), section_stress(r), section_logit(r), section_capm(r), section_garch(r, full = TRUE))
   paste(parts[!is.na(parts) & nzchar(parts)], collapse = "\n\n")
 }
 
