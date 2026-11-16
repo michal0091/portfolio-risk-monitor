@@ -3,17 +3,24 @@
 # crisis episodes), not forecasts to rely on alone.
 
 # --- Monthly returns of the funds with long-history fallbacks ----------------------
-# Fund proxies start in 2009-2014; before that the long index stands in (as in
-# historical_stress). Cash: €STR, or cfg$forecast$cash_fallback_pct before 2019.
+# Fund proxies start in 2009-2014. Before that, in this order: a total-return series in EUR
+# (S&P 500 TR and EEM converted with USD per EUR, STOXX Europe 600 ETF), then the price
+# index in local currency (no dividends, no FX effect). Cash: €STR, 3-month Euribor before
+# 2019, cfg$forecast$cash_fallback_pct when neither has data.
 fund_monthly_returns <- function(w, cfg) {
   w <- w[order(m_y)]
+  col <- function(a) if (a %in% names(w)) w[[a]] else rep(NA_real_, nrow(w))
   ret <- function(x) x / data.table::shift(x) - 1
-  pick <- function(a, b) { r <- ret(w[[a]]); rb <- ret(w[[b]]); data.table::fifelse(is.na(r), rb, r) }
-  cash <- data.table::shift(w$estr) / 100 / 12
+  usd_per_eur <- data.table::fcoalesce(col("eurusd"), col("eurusd_fx"))
+  eur <- function(a) { r <- ret(col(a) / usd_per_eur); data.table::fifelse(is.na(r), ret(col(a)), r) }
+  pick <- function(...) do.call(data.table::fcoalesce, list(...))
+  rate <- data.table::fcoalesce(col("estr"), col("euribor3m"))
+  cash <- data.table::shift(rate) / 100 / 12
   cash[is.na(cash)] <- cfg$forecast$cash_fallback_pct / 100 / 12
   x <- data.table::data.table(m_y = w$m_y, regime = w$regime, groupama = cash,
-                              world = pick("world", "spx"), europe = pick("europe", "stoxx50"),
-                              em = pick("em", "kospi"))
+                              world = pick(ret(col("world")), eur("spx_tr"), ret(col("spx"))),
+                              europe = pick(ret(col("europe")), ret(col("europe_tr")), ret(col("stoxx50"))),
+                              em = pick(ret(col("em")), eur("em_tr"), ret(col("kospi"))))
   x[stats::complete.cases(x[, .(world, europe, em)])]
 }
 
@@ -74,14 +81,15 @@ regime_bootstrap <- function(pr, cfg) {
       rentab_p50 = 100 * (stats::quantile(v[, h], .50) - 1),
       rentab_p95 = 100 * (stats::quantile(v[, h], .95) - 1))))
   }))
-  summary[, `:=`(regimen = used, meses_muestra = length(starts))]
+  # blocks that do not overlap: the effective number of independent draws
+  summary[, `:=`(regimen = used, meses_muestra = length(starts), bloques_independientes = length(starts) %/% B)]
   fan <- data.table::rbindlist(lapply(series, function(s) {
     q <- apply(paths[[s]], 2, stats::quantile, c(.05, .25, .5, .75, .95))
     data.table::data.table(cartera = s, mes = c(0, seq_len(H)),
                            p05 = c(1, q[1, ]), p25 = c(1, q[2, ]), p50 = c(1, q[3, ]),
                            p75 = c(1, q[4, ]), p95 = c(1, q[5, ]))
   }))
-  list(summary = summary, fan = fan, regime = used)
+  list(summary = summary, fan = fan, regime = used, months = length(starts), blocks = length(starts) %/% B)
 }
 
 # --- 2. Early-warning logit ---------------------------------------------------------
@@ -256,6 +264,8 @@ risk_contribution <- function(prices, pos_sum, cfg) {
 # level "daily": GARCH only (portfolios and positions, a few seconds); "full": everything.
 # prices: full price history of the positions (position_prices); pos_sum: position_summary
 run_forecasts <- function(daily, w, ph, prices, pos_sum, cfg, pf, level = "full") {
+  # risk models on total return: an ex-dividend day is not a fall
+  if (!is.null(prices) && "unidad_tr_eur" %in% names(prices)) prices <- data.table::copy(prices)[, unidad_eur := unidad_tr_eur]
   ref <- function(sid, label) {
     x <- daily[id == sid & !is.na(value)][order(date)]
     if (nrow(x)) list(label = label, date = x$date, price = x$value) else NULL

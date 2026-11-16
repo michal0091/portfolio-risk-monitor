@@ -44,7 +44,9 @@ synthetic_daily <- function(cfg, seed = 42) {
     bei10 = mr(2.2, .01, .02, -.8, .1), brent = mr(70, .01, 1.5, -25, 15),
     nfci = mr(-.4, .02, .03, 1.5, -1), stlfsi = mr(-.3, .02, .05, 3, -1.5),
     vix = mr(18, .05, .8, 25, 9), estr = mr(1.5, .002, .01, -1, -.6),
-    eurusd = mr(1.15, .005, .005, -.1, .85), eurusd_fx = mr(1.15, .005, .005, -.1, .85)
+    eurusd = mr(1.15, .005, .005, -.1, .85), eurusd_fx = mr(1.15, .005, .005, -.1, .85),
+    spx_tr = price(.10, .17, -.35), europe_tr = price(.08, .18, -.40, "2008-01-02"),
+    em_tr = price(.08, .22, -.45, "2003-04-14"), euribor3m = mr(2.0, .002, .01, -1, -.6)
   )
   # Late-2026 AI/credit stress overlay so the demo dashboard shows amber/red signals
   bump <- in_win("2026-09-01", "2026-12-31")

@@ -105,3 +105,19 @@ test_that("the investable target portfolio leaves out the emergency fund", {
   expect_equal(pr$`Cartera objetivo`, fr$world * eq / 100)
   expect_equal(pr$`Cartera invertible (objetivo)`, fr$world * eq / (100 - em))
 })
+
+test_that("long history prefers total return in EUR, then the local price index", {
+  m <- zoo::as.yearmon(2000 + 0:3 / 12)
+  w <- data.table::data.table(m_y = m, regime = "A", world = c(NA, NA, 100, 110), spx = c(100, 101, 102, 103),
+                              spx_tr = c(100, 110, 121, 999), eurusd = c(1, 1.1, 1.1, 1.1),
+                              europe = NA_real_, stoxx50 = c(100, 100, 105, 105),
+                              em = NA_real_, em_tr = c(NA, NA, 50, 55), kospi = c(10, 11, 12, 13),
+                              estr = c(NA, NA, NA, 2.4), euribor3m = c(1.2, 1.2, 1.2, 1.2))
+  fr <- fund_monthly_returns(w, cfg)
+  expect_equal(fr$world, c(110 / 1.1 / 100 - 1, 0.10, 0.10))     # S&P TR in EUR, then the proxy
+  expect_equal(fr$europe, c(0, 0.05, 0))                         # no TR series: price index
+  expect_equal(fr$em, c(0.1, 12 / 11 - 1, 0.10))                 # KOSPI, then EEM in EUR
+  expect_equal(fr$groupama, rep(1.2 / 1200, 3))                  # Euribor until the €STR has a lagged value
+  w2 <- w[, .(m_y, regime, world, spx, europe, stoxx50, em, kospi, estr)]      # series not downloaded
+  expect_equal(fund_monthly_returns(w2, cfg)$groupama, rep(cfg$forecast$cash_fallback_pct / 1200, 3))
+})
