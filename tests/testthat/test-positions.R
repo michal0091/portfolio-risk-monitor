@@ -72,3 +72,29 @@ test_that("the dividend-adjusted price has no fall on the ex-date and ends at th
   expect_equal(pp$unidad_tr_eur, c(95, 95, 95, 95))
   expect_equal(position_prices(p, pd[id == "px_d"])$unidad_tr_eur, c(100, 100, 95, 95))   # no dividends
 })
+
+test_that("xirr annualises money-weighted returns", {
+  d <- as.Date("2025-01-01")
+  expect_equal(xirr(c(-100, 110), c(d, d + 365)), 10, tolerance = 1e-6)
+  expect_equal(xirr(c(-100, 121), c(d, d + 730)), 10, tolerance = 1e-6)
+  expect_equal(xirr(c(-100, -100, 5, 230), c(d, d + 365, d + 400, d + 730)) > 0, TRUE)
+  expect_true(is.na(xirr(c(-100, 110), c(d, d + 30))))            # too short to annualise
+  expect_true(is.na(xirr(c(-100, -10), c(d, d + 365))))
+})
+
+test_that("summary has the money-weighted return and the total-return year change", {
+  h <- position_history(pos, pdata)
+  s <- position_summary(pos, pdata, h)
+  expect_true(is.finite(s[id == "abc", tir_anual_pct]))
+  expect_equal(s[id == "total", tir_anual_pct], s[id == "abc", tir_anual_pct])   # one position
+  expect_true(s[id == "abc", tir_anual_pct] > 0)                                  # result is positive
+  d <- seq(as.Date("2023-12-01"), as.Date("2024-12-31"), by = "day")
+  p <- list(list(id = "d", name = "D", ticker = "D", type = "stock", currency = "EUR",
+                 lots = list(list(date = "2023-12-01", shares = 1, price = 100))))
+  pd <- data.table::rbindlist(list(
+    data.table::data.table(date = d, id = "px_d", value = data.table::fifelse(d < as.Date("2024-06-03"), 100, 95)),
+    data.table::data.table(date = as.Date("2024-06-03"), id = "div_d", value = 5)))
+  s <- position_summary(p, pd, position_history(p, pd))[id == "d"]
+  expect_equal(s$var_anio_pct, -5)
+  expect_equal(s$var_anio_tr_pct, 0)                             # the fall was the dividend
+})

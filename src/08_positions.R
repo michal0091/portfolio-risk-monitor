@@ -128,9 +128,22 @@ lot_book <- function(lots) {
   list(shares = shares, cost = cost, realised = realised)
 }
 
+# Annualised money-weighted return (XIRR) of dated cash flows: negative = paid, positive =
+# received (the current value counts as received today). NA without both signs or with
+# less than min_days between the first flow and the last (annualising a few weeks misleads).
+xirr <- function(amount, date, min_days = 90) {
+  if (length(amount) < 2 || all(amount >= 0) || all(amount <= 0)) return(NA_real_)
+  if (as.numeric(max(date) - min(date)) < min_days) return(NA_real_)
+  t <- as.numeric(date - min(date)) / 365
+  tryCatch(100 * stats::uniroot(function(r) sum(amount / (1 + r)^t), c(-0.999, 100), tol = 1e-9)$root,
+           error = function(e) NA_real_)
+}
+
 # Latest snapshot per position + total row
 position_summary <- function(positions, pdata, hist) {
   last_on <- function(x, d) { y <- x[date <= d]; if (nrow(y)) data.table::last(y$unidad_eur) else NA_real_ }
+  divs <- dividends_received(positions, pdata)
+  flows <- list()
   rows <- lapply(positions, function(p) {
     x <- hist[id == p$id][order(date)]
     if (!nrow(x)) return(NULL)
@@ -143,6 +156,15 @@ position_summary <- function(positions, pdata, hist) {
     u <- position_prices(list(p), pdata)
     if (!nrow(u)) u <- x
     ytd_ref <- last_on(u, as.Date(paste0(format(d, "%Y"), "-01-01")) - 1)
+    ytd_tr <- { y <- u[date <= as.Date(paste0(format(d, "%Y"), "-01-01")) - 1]
+                if (nrow(y) && "unidad_tr_eur" %in% names(u)) data.table::last(u$unidad_tr_eur) / data.table::last(y$unidad_tr_eur) else NA_real_ }
+    # cash flows in EUR: purchases and sales with fees, net dividends, value today
+    dv <- if (!is.null(divs) && nrow(divs)) divs[id == p$id] else NULL
+    fl <- data.table::rbindlist(list(
+      lots[, .(date, amount = -flow - fees)],
+      if (!is.null(dv) && nrow(dv)) dv[, .(date = fecha_ex, amount = neto_eur)],
+      data.table::data.table(date = d, amount = l$valor_eur)))
+    flows[[p$id]] <<- fl
     data.table::data.table(
       id = p$id, nombre = p$name, fecha = d, divisa = quote_ccy(p$currency),
       estrategia = if (is.null(p$strategy)) "tactical" else p$strategy,
@@ -153,6 +175,8 @@ position_summary <- function(positions, pdata, hist) {
       plusvalia_latente_eur = l$valor_eur - b$cost, plusvalia_realizada_eur = b$realised,
       dividendos_eur = l$dividendos_eur, resultado_eur = l$resultado_eur,
       rentab_total_pct = 100 * l$resultado_eur / l$invertido_eur,
+      tir_anual_pct = xirr(fl$amount, fl$date),          # money-weighted, annualised
+      var_anio_tr_pct = 100 * (ytd_tr - 1),              # year to date with dividends
       var_dia_pct = 100 * (l$unidad_eur / last_on(u, d - 1) - 1),
       var_1m_pct  = 100 * (l$unidad_eur / last_on(u, d - 30) - 1),
       var_anio_pct = 100 * (l$unidad_eur / ytd_ref - 1))
@@ -168,11 +192,14 @@ position_summary <- function(positions, pdata, hist) {
                plusvalia_latente_eur = sum(plusvalia_latente_eur),
                plusvalia_realizada_eur = sum(plusvalia_realizada_eur),
                dividendos_eur = sum(dividendos_eur), resultado_eur = sum(resultado_eur),
-               rentab_total_pct = NA_real_,
+               rentab_total_pct = NA_real_, tir_anual_pct = NA_real_,
+               var_anio_tr_pct = wavg(var_anio_tr_pct, valor_eur),
                var_dia_pct = wavg(var_dia_pct, valor_eur), var_1m_pct = wavg(var_1m_pct, valor_eur),
                var_anio_pct = wavg(var_anio_pct, valor_eur), peso_pct = 100)]
   inv <- hist[, .SD[.N], by = id][, sum(invertido_eur)]
   tot[, rentab_total_pct := 100 * resultado_eur / inv]
+  af <- data.table::rbindlist(flows)
+  tot[, tir_anual_pct := xirr(af$amount, af$date)]
   rbind(s, tot)
 }
 
