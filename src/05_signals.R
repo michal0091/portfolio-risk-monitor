@@ -33,19 +33,25 @@ signal_table <- function(daily, cfg) {
   data.table::rbindlist(rows)
 }
 
-# Rough scenario read-out from the signals (heuristic, not a model)
+# Rough scenario read-out from the signals (heuristic, not a model). Credit counts the
+# spreads only: the BDC and CoreWeave drawdowns are share prices and belong with the AI /
+# listed private credit group. B needs a tense spread; `motivo` lists the signals behind.
 scenario_hint <- function(sig) {
   st <- setNames(sig$estado, sig$id)
+  groups <- list(credit = c("hy_oas", "ig_oas", "eu_hy_oas"), rates = c("ust10", "tips10", "brent"),
+                 ai = c("sox_dd", "kospi_dd", "crwv_dd", "bizd_dd"), panic = c("vix", "stlfsi", "hy_oas"))
   red <- function(ids) sum(st[intersect(ids, names(st))] == "Rojo")
   amb <- function(ids) sum(st[intersect(ids, names(st))] %in% c("Rojo", "Ámbar"))
-  credit <- amb(c("hy_oas", "ig_oas", "eu_hy_oas", "bizd_dd", "crwv_dd"))
-  rates  <- amb(c("ust10", "tips10", "brent"))
-  ai     <- amb(c("sox_dd", "kospi_dd", "crwv_dd"))
-  panic  <- red(c("vix", "stlfsi", "hy_oas"))
+  credit <- amb(groups$credit); rates <- amb(groups$rates); ai <- amb(groups$ai)
+  panic  <- red(groups$panic)
   hint <- if (panic >= 2 && rates == 0) "C (crash deflacionario): pánico sin presión de tipos"
-    else if (credit >= 2 && rates >= 2) "B (estanflación + evento de crédito)"
+    else if (credit >= 1 && rates >= 2) "B (estanflación + evento de crédito)"
+    else if (ai >= 1 && rates >= 2) "A con tipos altos (desinflado del ciclo IA, diferenciales de crédito sin tensión)"
     else if (ai >= 1 || credit >= 1) "A (desinflado ordenado del ciclo IA)"
     else "D (aterrizaje suave) o sin señales"
+  why <- sig[id %in% unlist(groups) & estado != "Verde"]
   data.table::data.table(senales_credito = credit, senales_tipos_inflacion = rates,
-                         senales_ia = ai, senales_panico = panic, escenario_probable = hint)
+                         senales_ia = ai, senales_panico = panic, escenario_probable = hint,
+                         motivo = if (nrow(why)) paste0(why$senal, " (", tolower(why$estado), ")", collapse = "; ")
+                                  else "todas las señales en verde")
 }
