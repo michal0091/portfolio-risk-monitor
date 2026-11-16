@@ -12,7 +12,7 @@ test_that("regime bootstrap is reproducible and exact with constant returns", {
   c2 <- cfg; c2$forecast$bootstrap$n_paths <- 500; c2$forecast$bootstrap$min_regime_months <- 12
   b1 <- regime_bootstrap(pr, c2); b2 <- regime_bootstrap(pr, c2)
   expect_identical(b1$summary, b2$summary)
-  expect_equal(b1$regime, "B")
+  expect_match(b1$regime, "^B ")
   s <- b1$summary[cartera == "Cartera objetivo" & horizonte_meses == 24]
   expect_equal(s$rentab_p50, 100 * (1.01^24 - 1))
   expect_equal(s$prob_caida, 0)
@@ -46,7 +46,13 @@ test_that("capm recovers a known beta", {
   ct <- capm_table(daily, NULL, cfg)
   expect_equal(ct[id == "europe", beta], 1.5, tolerance = 1e-8)
   expect_equal(ct[id == "europe", r2], 1)
-  expect_equal(ct$meses, c(36, 36))
+  expect_equal(ct$meses, c(60, 60))
+  expect_equal(ct[id == "europe", c(beta_inf, beta_sup)], c(1.5, 1.5), tolerance = 1e-6)
+  em <- ct[id == "em"]
+  expect_true(em$beta_inf < em$beta && em$beta < em$beta_sup && em$alfa_inf < em$alfa_sup)
+  txt <- section_capm(list(forecast = list(capm = ct)))
+  expect_match(txt, "beta 1,50 \\[1,50 a 1,50\\]")
+  expect_match(txt, "Emergentes \\(proxy\\) \\(60 meses\\).*alfa no significativo")
 })
 
 test_that("garch needs enough observations and reports positive tail losses", {
@@ -120,4 +126,45 @@ test_that("long history prefers total return in EUR, then the local price index"
   expect_equal(fr$groupama, rep(1.2 / 1200, 3))                  # Euribor until the €STR has a lagged value
   w2 <- w[, .(m_y, regime, world, spx, europe, stoxx50, em, kospi, estr)]      # series not downloaded
   expect_equal(fund_monthly_returns(w2, cfg)$groupama, rep(cfg$forecast$cash_fallback_pct / 1200, 3))
+})
+
+test_that("bootstrap follows the regime transitions when asked to", {
+  # regime A: +1 % a month, B: -1 %; A is left for good after month 60 in the sample
+  m <- zoo::as.yearmon(2000 + 0:119 / 12)
+  pr <- data.table::data.table(m_y = m, regime = rep(c("B", "A", "B"), c(30, 30, 60)))
+  pr[, x := data.table::fifelse(regime == "A", .01, -.01)]
+  pr <- rbind(pr, data.table::data.table(m_y = max(m) + 1:6 / 12, regime = "A", x = .01))   # now in A
+  c2 <- cfg; c2$forecast$bootstrap$n_paths <- 2000; c2$forecast$bootstrap$min_regime_months <- 6
+  c2$forecast$bootstrap$transitions <- FALSE
+  fixed <- regime_bootstrap(pr, c2)
+  expect_equal(fixed$regime, "A")
+  c2$forecast$bootstrap$transitions <- TRUE
+  mk <- regime_bootstrap(pr, c2)
+  expect_match(mk$regime, "con transiciones")
+  p50 <- function(b) b$summary[horizonte_meses == 24, rentab_p50]
+  expect_true(p50(mk) < p50(fixed))                    # some paths move to the bad regime
+  expect_true(p50(fixed) > 0)
+  expect_equal(mk$summary$bloques_independientes[1], mk$months %/% c2$forecast$bootstrap$block)
+})
+
+test_that("stress index is the mean z-score of the configured series", {
+  d <- as.Date("2020-01-01") + 0:399
+  daily <- data.table::rbindlist(list(
+    data.table::data.table(date = d, id = "vix", value = c(rep(c(10, 20), 199), 15, 30)),
+    data.table::data.table(date = d, id = "baa10y", value = c(rep(c(1, 3), 199), 2, 2)),
+    data.table::data.table(date = d, id = "other", value = 1)))
+  c2 <- cfg; c2$forecast$stress$series <- c("vix", "baa10y", "missing")
+  st <- stress_index(daily, c2)
+  v <- c(rep(c(10, 20), 199), 15, 30); b <- c(rep(c(1, 3), 199), 2, 2)
+  expect_equal(st$table$indice, mean(c((30 - mean(v)) / sd(v), (2 - mean(b)) / sd(b))))
+  expect_equal(st$parts$id, c("vix", "baa10y"))
+  expect_equal(st$table$percentil, 100)
+  expect_null(stress_index(daily[id == "other"], c2))
+})
+
+test_that("garch reports the 21-session forecast and realised volatility", {
+  set.seed(11)
+  g <- garch_one(100 * exp(cumsum(rnorm(1500, 0, .01))), "larga", cfg)$table
+  expect_equal(g$vol_21d_pct, g$vol_anual_pct, tolerance = .2)
+  expect_equal(g$vol_realizada_21d_pct, 100 * .01 * sqrt(252), tolerance = .5)
 })

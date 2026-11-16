@@ -47,22 +47,49 @@ portfolio_monthly_returns <- function(fr, pf) {
   out
 }
 
-# --- 1. Block bootstrap within the current regime ----------------------------------
-# Blocks of `block` consecutive months start in months of the current regime; all
-# portfolios share the same draws so they are comparable.
+# --- 1. Block bootstrap along a simulated regime path --------------------------------
+# Each path starts in the current regime and follows the monthly transition matrix of the
+# sample (bc$transitions, default TRUE; FALSE = the whole horizon in the current regime).
+# Every block of `block` consecutive months starts in a month of the regime the path is
+# in when the block begins. All portfolios share the same draws so they are comparable.
+# With too few months in the current regime, blocks come from all months.
 regime_bootstrap <- function(pr, cfg) {
   bc <- cfg$forecast$bootstrap
   set.seed(bc$seed)
   cur <- data.table::last(pr[!is.na(regime), regime])
   n <- nrow(pr); H <- bc$horizon; B <- bc$block
-  starts <- which(pr$regime == cur & seq_len(n) <= n - B + 1)
-  used <- cur
-  if (length(starts) < bc$min_regime_months) { starts <- seq_len(n - B + 1); used <- "todos los regímenes" }
+  ok <- seq_len(n) <= n - B + 1
+  starts <- which(pr$regime == cur & ok)
   nb <- ceiling(H / B)
-  idx <- t(vapply(seq_len(bc$n_paths), function(i) {
-    s <- sample(starts, nb, replace = TRUE)
-    as.vector(outer(0:(B - 1), s, `+`))[seq_len(H)]
-  }, integer(H)))
+  markov <- !isFALSE(bc$transitions)
+  used <- if (markov) paste0(cur, " (con transiciones de régimen)") else cur
+  if (length(starts) < bc$min_regime_months) {
+    starts <- which(ok); used <- "todos los regímenes"
+    s_mat <- matrix(sample(starts, bc$n_paths * nb, replace = TRUE), nrow = bc$n_paths)
+  } else {
+    regs <- sort(unique(pr$regime[!is.na(pr$regime)]))
+    by_reg <- lapply(stats::setNames(regs, regs), function(g) {
+      x <- which(pr$regime == g & ok)
+      if (length(x) >= B) x else which(ok)              # regime too rare: any month
+    })
+    # monthly transition probabilities between consecutive months of the sample
+    tr <- table(factor(utils::head(pr$regime, -1), regs), factor(pr$regime[-1], regs))
+    state <- matrix(match(cur, regs), nrow = bc$n_paths, ncol = H)
+    if (markov) for (m in seq_len(H)[-1]) for (g in seq_along(regs)) {
+      at <- which(state[, m - 1] == g)
+      if (!length(at)) next
+      pg <- tr[g, ]
+      state[at, m] <- if (sum(pg) > 0) sample(seq_along(regs), length(at), replace = TRUE, prob = pg) else g
+    }
+    first <- state[, (seq_len(nb) - 1) * B + 1, drop = FALSE]      # regime when each block starts
+    s_mat <- matrix(0L, nrow = bc$n_paths, ncol = nb)
+    for (g in seq_along(regs)) {
+      at <- which(first == g)
+      pool <- by_reg[[g]]
+      if (length(at)) s_mat[at] <- pool[sample.int(length(pool), length(at), replace = TRUE)]
+    }
+  }
+  idx <- t(apply(s_mat, 1, function(s) as.vector(outer(0:(B - 1), s, `+`))[seq_len(H)]))
   series <- setdiff(names(pr), c("m_y", "regime"))
   paths <- lapply(stats::setNames(series, series), function(s) {
     r <- matrix(pr[[s]][idx], nrow = bc$n_paths)
@@ -135,8 +162,16 @@ early_warning <- function(daily, w, cfg) {
   full <- fit_glm(d[!is.na(y)])
   ev <- d[!is.na(p_oos) & !is.na(y)]
   base <- d[!is.na(y), cumsum(y) / seq_len(.N)]          # climatology for the Brier skill
+  # Episodes: runs of event months (gaps of up to 2 months joined). The months are few
+  # independent falls; one counts as anticipated when, in its first month, the model gave
+  # more than the historical frequency known then
+  ev[, clima := data.table::shift(base)[match(m_y, d[!is.na(y), m_y])]]
+  e1 <- ev[y == 1]
+  e1[, episodio := cumsum(c(1, diff(as.numeric(m_y)) > 2.5 / 12))]
+  epi <- e1[, .(anticipado = p_oos[1] > clima[1]), by = episodio]
   metrics <- data.table::data.table(
     meses_oos = nrow(ev), eventos_oos = sum(ev$y),
+    episodios_oos = nrow(epi), episodios_anticipados = sum(epi$anticipado, na.rm = TRUE),
     auc_oos = auc(ev$p_oos, ev$y), brier_oos = brier(ev$p_oos, ev$y),
     brier_clima = brier(data.table::shift(base)[match(ev$m_y, d[!is.na(y), m_y])], ev$y),
     prob_actual = 100 * stats::predict(full, d[.N], type = "response"),
@@ -145,8 +180,29 @@ early_warning <- function(daily, w, cfg) {
   list(metrics = metrics, coefs = coefs, series = d[, .(m_y = format(m_y), y, p_oos)])
 }
 
+# --- 2b. Current stress index (nowcast) ---------------------------------------------
+# Mean z-score of stress measures with long history (cfg$forecast$stress$series, higher =
+# more stress), each against its own history. It describes today; it predicts nothing.
+stress_index <- function(daily, cfg) {
+  ids <- cfg$forecast$stress$series
+  x <- data.table::dcast(daily[id %in% ids & !is.na(value)], date ~ id, value.var = "value")[order(date)]
+  ids <- intersect(ids, names(x))
+  if (!length(ids) || nrow(x) < 250) return(NULL)
+  for (s in ids) x[, (s) := zoo::na.locf(get(s), na.rm = FALSE)]
+  x <- x[stats::complete.cases(x)]
+  z <- sapply(ids, function(s) (x[[s]] - mean(x[[s]])) / stats::sd(x[[s]]))
+  idx <- rowMeans(z)
+  ago <- function(days) { i <- which(x$date <= max(x$date) - days); if (length(i)) idx[max(i)] else NA_real_ }
+  list(table = data.table::data.table(fecha = max(x$date), indice = idx[length(idx)],
+                                      percentil = last_percentile(idx), hace_1m = ago(30), hace_3m = ago(91),
+                                      desde = min(x$date), series = paste(ids, collapse = ", ")),
+       parts = data.table::data.table(id = ids, z = z[nrow(z), ]),
+       series = data.table::data.table(date = x$date, indice = idx))
+}
+
 # --- 3. CAPM ------------------------------------------------------------------------
-# Monthly excess returns over €STR versus the market proxy, last `window` months
+# Monthly excess returns over €STR versus the market proxy, last `window` months (fewer
+# when the history is shorter, at least 12), with 95 % confidence intervals
 capm_table <- function(daily, prices, cfg) {
   cc <- cfg$forecast$capm
   me <- function(dt) dt[order(date), .(v = data.table::last(v)), by = .(m_y = zoo::as.yearmon(date))]
@@ -164,8 +220,11 @@ capm_table <- function(daily, prices, cfg) {
     x <- utils::tail(x[stats::complete.cases(x)], cc$window)
     if (nrow(x) < 12) return(NULL)
     m <- stats::lm(I(ri - rf) ~ I(rm - rf), data = x)
+    ci <- suppressWarnings(stats::confint(m, level = .95))          # rows: alpha, beta
     data.table::data.table(id = s, nombre = names_map[[s]], meses = nrow(x),
                            alfa_anual_pct = 1200 * stats::coef(m)[[1]], beta = stats::coef(m)[[2]],
+                           alfa_inf = 1200 * ci[1, 1], alfa_sup = 1200 * ci[1, 2],
+                           beta_inf = ci[2, 1], beta_sup = ci[2, 2],
                            r2 = suppressWarnings(summary(m)$r.squared),   # market itself: perfect fit
                            vol_anual_pct = 100 * stats::sd(x$ri) * sqrt(12))
   }))
@@ -182,7 +241,7 @@ garch_one <- function(price, label, cfg) {
     mean.model = list(armaOrder = c(0, 0), include.mean = TRUE), distribution.model = "std")
   fit <- tryCatch(rugarch::ugarchfit(spec, r, solver = "hybrid"), error = function(e) NULL)
   if (is.null(fit) || fit@fit$convergence != 0) return(NULL)
-  fc <- rugarch::ugarchforecast(fit, n.ahead = 10)
+  fc <- rugarch::ugarchforecast(fit, n.ahead = 21)
   sig <- as.numeric(rugarch::sigma(fc)); mu <- as.numeric(rugarch::fitted(fc))
   nu <- rugarch::coef(fit)[["shape"]]
   hist_sig <- as.numeric(rugarch::sigma(fit))
@@ -193,11 +252,13 @@ garch_one <- function(price, label, cfg) {
     c(var = -(m + s * q), es = -(m + s * es))
   }
   pers <- sum(rugarch::coef(fit)[c("alpha1", "beta1")]) + rugarch::coef(fit)[["gamma1"]] / 2
-  s10 <- sqrt(sum(sig^2)); m10 <- sum(mu)   # 10-day: sum of variances, t quantile (approx.)
+  s10 <- sqrt(sum(sig[1:10]^2)); m10 <- sum(mu[1:10])   # 10-day: sum of variances, t quantile (approx.)
   v95 <- tail_loss(.05, sig[1], mu[1]); v99 <- tail_loss(.01, sig[1], mu[1])
   v95_10 <- tail_loss(.05, s10, m10)
   list(table = data.table::data.table(
     serie = label, obs = length(r), vol_anual_pct = sig[1] * sqrt(252),
+    # mean forecast over 21 sessions (comparable with the 30-day VIX) and realised volatility
+    vol_21d_pct = sqrt(mean(sig^2) * 252), vol_realizada_21d_pct = stats::sd(utils::tail(r, 21)) * sqrt(252),
     percentil_vol = 100 * mean(hist_sig <= sig[1]),
     var95_1d_pct = v95[["var"]], es95_1d_pct = v95[["es"]],
     var99_1d_pct = v99[["var"]], es99_1d_pct = v99[["es"]], var95_10d_pct = v95_10[["var"]],
@@ -234,7 +295,7 @@ garch_table <- function(ph, prices, pos_sum, cfg, refs = list()) {
     g <- garch_one(j$price, j$label, cfg)
     if (is.null(g)) return(NULL)
     g$vol[, date := utils::tail(j$date, nrow(g$vol))]
-    g$table[, id := j$id]
+    g$table[, `:=`(id = j$id, fecha = max(j$date))]
     g
   })
   res <- res[!sapply(res, is.null)]
@@ -278,6 +339,7 @@ run_forecasts <- function(daily, w, ph, prices, pos_sum, cfg, pf, level = "full"
     pr <- portfolio_monthly_returns(fund_monthly_returns(w, cfg), pf)
     out$bootstrap <- regime_bootstrap(pr, cfg)
     out$logit <- early_warning(daily, w, cfg)
+    out$stress <- stress_index(daily, cfg)
     out$capm <- capm_table(daily, prices, cfg)
     out$risk <- risk_contribution(prices, pos_sum, cfg)
   }

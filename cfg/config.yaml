@@ -66,7 +66,9 @@ fred:
 # ---------------------------------------------------------------------------
 regimes:
   inflation_series: us_cpi      # yoy computed from the index
-  inflation_high: 3.0           # % yoy above which inflation is "alta"
+  inflation_high: 3.0           # % yoy above which inflation turns "alta"...
+  inflation_exit: 2.5           # ...and stays "alta" until it falls below this (hysteresis)
+  inflation_info: ea_hicp       # shown next to the regime in the report; does not define it
   credit_series: baa10y         # ICE BofA OAS on FRED only cover the last 3 years; BAA10Y goes back to 1986
   credit_tense_abs: 3.0         # Baa-10y spread (%) above which credit is "tensionado"
   credit_tense_window: 60       # ...or above its rolling 60-month median...
@@ -126,6 +128,7 @@ forecast:
     block: 6                    # months per block
     loss: 15                    # drawdown threshold (%) for P(caída)
     min_regime_months: 36       # fewer months in the current regime -> use all months
+    transitions: true           # regime path simulated with the monthly transition matrix
     seed: 1
   logit:                        # early warning: P(drawdown > loss within horizon months)
     index: spx                  # equity index whose drawdown is the target (long history)
@@ -133,9 +136,11 @@ forecast:
     loss: 15
     min_events: 6               # positive months needed in the training window to predict
     start_oos: "2006-01-01"
+  stress:                       # current stress index: mean z-score, long-history series only
+    series: [vix, baa10y, stlfsi]
   capm:
     market: world               # MSCI World (EUR) proxy
-    window: 36                  # months
+    window: 60                  # months (fewer when the history is shorter, at least 12)
   garch:
     model: gjrGARCH             # rugarch variance model, (1,1), Student-t errors
     min_obs: 500                # daily returns needed to fit

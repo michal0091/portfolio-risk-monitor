@@ -88,6 +88,7 @@ run_pipeline <- function(cfg, pf, pos, charts = TRUE, forecast = "full") {
     fw(fc$logit$coefs, "early_warning_coefs.csv")
     fw(fc$logit$series, "early_warning_series.csv")
     fw(fc$capm, "capm.csv")
+    if (!is.null(fc$stress)) fw(fc$stress$table, "stress_index.csv")
     if (!is.null(fc$risk)) fw(fc$risk, "risk_contribution.csv")
   }
 
