@@ -17,7 +17,8 @@ fund_monthly_returns <- function(w, cfg) {
   x[stats::complete.cases(x[, .(world, europe, em)])]
 }
 
-# Monthly return series of the portfolios and Groupama buckets to simulate
+# Monthly return series of the portfolios and Groupama buckets to simulate. Current and
+# target portfolios include the emergency fund; the investable one does not.
 portfolio_monthly_returns <- function(fr, pf) {
   fund_ids <- c("groupama", "world", "europe", "em")
   mix <- function(wt) { wt <- unlist(wt)[fund_ids]; as.matrix(fr[, ..fund_ids]) %*% (wt / sum(wt)) }
@@ -28,6 +29,12 @@ portfolio_monthly_returns <- function(fr, pf) {
                                 `Cartera actual` = mix(pf$weights_current)[, 1],
                                 `Cartera objetivo` = mix(pf$weights_target)[, 1])
   b <- pf$buckets
+  # Target without the emergency fund: the base the loss tolerance was defined on
+  if (!is.null(b$emergency$groupama)) {
+    inv <- unlist(pf$weights_target)[fund_ids]
+    inv["groupama"] <- inv["groupama"] - b$emergency$groupama
+    out[, `Cartera invertible (objetivo)` := mix(inv)[, 1]]
+  }
   if (!is.null(b$house_deposit$equity_share)) out[, `Bolsillo entrada` := bucket(b$house_deposit$equity_share)[, 1]]
   if (!is.null(b$general$equity_share)) out[, `Ahorro general` := bucket(b$general$equity_share)[, 1]]
   out

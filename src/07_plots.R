@@ -162,7 +162,7 @@ plot_bootstrap <- function(bs, cfg, file = NULL) {
   # Legend from lower to higher risk: order by the 24-month 5th percentile
   ord <- x[mes == max(mes)][order(-p05), cartera]
   x[, cartera := factor(cartera, levels = ord)]
-  pal <- stats::setNames(c("#a1dab4", "#41b6c4", "#2c7fb8", "#253494")[seq_along(ord)], ord)
+  pal <- stats::setNames(c("#a1dab4", "#41b6c4", "#2c7fb8", "#253494", "#081d58")[seq_along(ord)], ord)
   pv <- function(v) 100 * (v - 1)
   p <- ggplot2::ggplot(x, ggplot2::aes(mes)) +
     ggplot2::geom_ribbon(ggplot2::aes(ymin = pv(p05), ymax = pv(p95), fill = cartera), alpha = .18) +

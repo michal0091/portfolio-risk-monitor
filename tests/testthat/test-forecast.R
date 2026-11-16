@@ -95,3 +95,13 @@ test_that("garch long-run volatility is close to the simulated one", {
   if (is.finite(g$vol_largo_plazo_pct)) expect_equal(g$vol_largo_plazo_pct, 100 * .01 * sqrt(252), tolerance = .3)
   expect_true(g$vol_largo_plazo_pct > 0 || is.na(g$vol_largo_plazo_pct))
 })
+
+test_that("the investable target portfolio leaves out the emergency fund", {
+  fr <- data.table::data.table(m_y = zoo::as.yearmon(2020 + 0:2 / 12), regime = "A", groupama = 0,
+                               world = c(.10, -.10, .05), europe = c(.10, -.10, .05), em = c(.10, -.10, .05))
+  pr <- portfolio_monthly_returns(fr, pf)
+  wt <- unlist(pf$weights_target); em <- pf$buckets$emergency$groupama
+  eq <- sum(wt[c("world", "europe", "em")])
+  expect_equal(pr$`Cartera objetivo`, fr$world * eq / 100)
+  expect_equal(pr$`Cartera invertible (objetivo)`, fr$world * eq / (100 - em))
+})
