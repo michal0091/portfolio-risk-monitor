@@ -1,2 +1,2 @@
-senales_credito,senales_tipos_inflacion,senales_ia,senales_panico,escenario_probable
-4,1,2,2,A (desinflado ordenado del ciclo IA)
+senales_credito,senales_tipos_inflacion,senales_ia,senales_panico,escenario_probable,motivo
+3,2,2,2,B (estanflación + evento de crédito),Spread high yield EE. UU. (rojo); Spread grado de inversión (rojo); Spread high yield euro (rojo); Bono 10 años EE. UU. (ámbar); Brent (ámbar); VIX (rojo); Estrés financiero St. Louis (ámbar); Caída del SOX desde máximo (%) (ámbar); Caída del KOSPI desde máximo (%) (rojo)

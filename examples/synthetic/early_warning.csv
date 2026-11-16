@@ -1,2 +1,2 @@
-meses_oos,eventos_oos,auc_oos,brier_oos,brier_clima,prob_actual,prob_actual_oos,fecha
-243,35,0.680769230769231,0.15004295270178,0.125685506021895,66.9586131665805,66.9586131665805,Oct 2026
+meses_oos,eventos_oos,episodios_oos,episodios_anticipados,auc_oos,brier_oos,brier_clima,prob_actual,prob_actual_oos,fecha
+244,29,10,4,0.561347233360064,0.150117605686665,0.108024182736425,18.2161759373899,18.2161759373899,Nov 2026

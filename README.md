@@ -72,10 +72,13 @@ Dependencias (en `DESCRIPTION`): `data.table`, `zoo`, `xts`, `quantmod`, `yaml`,
 ```bash
 Rscript report.R daily --dry-run     # resumen diario, guardado en output/report_daily.html sin enviar
 Rscript report.R weekly --dry-run    # informe semanal con gráficos
+Rscript report.R monthly --dry-run   # informe mensual: el semanal más los modelos
 ```
 
 - **Resumen diario:** semáforo y cambios desde el último informe, cartera de fondos, posiciones y dividendos nuevos.
-- **Informe semanal:** añade el régimen, los escenarios, el rebalanceo, el detalle de cada posición y los gráficos.
+- **Informe semanal:** empieza con tres líneas de decisión (acción, próximo hito del plan y cambio clave) y añade el régimen, los escenarios, el rebalanceo, el detalle de cada posición (con TIR anualizada), el índice de estrés y los gráficos.
+- **Informe mensual** (primer domingo del mes, en lugar del semanal): el semanal más los modelos: bootstrap, logit, CAPM y GARCH completo.
+- Si la ejecución falla, el workflow envía un aviso a Telegram sin datos. Los tests y un informe sintético se ejecutan en cada `push` (`.github/workflows/tests.yml`).
 
 Sin credenciales, o con `--dry-run`, no se envía nada.
 
@@ -118,7 +121,7 @@ src/09_forecast.R            bootstrap por régimen, logit de alerta temprana, C
 src/10_report.R              textos del informe de Telegram (HTML)
 src/11_telegram.R            envío a Telegram con httr2 (o modo de prueba)
 src/12_pipeline.R            run_pipeline(): el pipeline completo, usado por main.R y report.R
-report.R                     informe diario o semanal: Rscript report.R daily|weekly [--dry-run]
+report.R                     informe diario, semanal o mensual: Rscript report.R daily|weekly|monthly [--dry-run]
 main.R                       punto de entrada
 ```
 
@@ -126,7 +129,7 @@ main.R                       punto de entrada
 
 | Archivo | Contenido |
 | --- | --- |
-| `signals.csv`, `signals.png` | semáforo: valor, cambio 1m/3m, percentil histórico, estado |
+| `signals.csv`, `signals.png` | semáforo: valor, cambio respecto al dato anterior (`cambio_1d`), a 1 y 3 meses, percentil histórico, estado |
 | `scenario_hint.csv` | escenario más coherente con las señales (heurístico) |
 | `scenarios.csv`, `scenarios.png` | pérdidas por escenario: actual, objetivo, plan y conjunto |
 | `equity_share_grid.csv` | pérdida por escenario según el % en bolsa (control de la tolerancia −15 %) |
@@ -140,7 +143,7 @@ main.R                       punto de entrada
 | `portfolio_history.csv`, `portfolio.png` | evolución simulada de la cartera actual y objetivo (proxies, rebalanceo trimestral por defecto: `rebalance: frequency_months` en `cfg/portfolio.yaml`) y caída desde máximo |
 | `regimes_monthly.csv`, `regimes.png` | régimen mensual inflación × crédito |
 | `regime_performance.csv`, `regime_transitions.csv` | rentabilidad condicionada y matriz de transición |
-| `rebalance_plan.csv`, `glide_path.csv` | traspasos por tramo y senda del bolsillo de entrada |
+| `glide_path.csv` | senda del bolsillo de entrada |
 | `fund_drift.csv` | pesos (y valor en euros si hay `values_eur`) estimados hoy desde `as_of`, con los movimientos de `transactions` aplicados, desvío del objetivo y traspasos |
 | `stress_index.csv` | índice de estrés actual: media de z-scores de VIX, diferencial Baa y estrés de St. Louis. Describe el presente, no predice |
 | `freshness.csv`, `data_quality.csv` | última fecha de cada serie frente a su frecuencia (marca las que han dejado de actualizarse) y valores anómalos: los saltos aislados de más del 50 % que se deshacen al día siguiente y los valores no positivos se excluyen; las variaciones diarias recientes de más del 20 % solo se avisan |
