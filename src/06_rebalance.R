@@ -77,22 +77,49 @@ route_contribution <- function(pf, equity_eur = 100) {
 # snapshot taken on pf$as_of, drifted with each fund's proxy (cash proxies such as estr
 # accrue ACT/360). Without as_of the snapshot is taken as current. Also the value on the
 # previous session, for the daily change, and the transfer to target per fund.
+# pf$transactions ([{date, from, to, eur}], after as_of, EUR snapshot only) are applied on
+# their date: a transfer between funds, a contribution (no `from`) or a withdrawal (no `to`).
 fund_drift <- function(daily, pf, rate_proxies = "estr") {
   ids <- names(pf$weights_target)
   w0 <- unlist(pf$weights_current)[ids]; tgt <- unlist(pf$weights_target)[ids]
   base <- if (isTRUE(pf$values_based)) unlist(pf$values_eur)[ids] else w0
   from <- if (is.null(pf$as_of)) NA else as.Date(pf$as_of)
-  growth <- function(f, drop_last = FALSE) {
-    if (is.na(from)) return(1)
-    proxy <- pf$funds[[f]]$proxy
-    x <- daily[id == proxy & date >= from & !is.na(value)][order(date)]
-    if (drop_last) x <- x[-nrow(x)]
-    if (nrow(x) < 2) return(1)
-    if (proxy %in% rate_proxies) prod(1 + utils::head(x$value, -1) / 100 * diff(as.numeric(x$date)) / 360)
-    else data.table::last(x$value) / x$value[1]
+  proxy <- sapply(pf$funds[ids], `[[`, "proxy")
+  px <- daily[id %in% proxy & !is.na(value)][order(id, date)]
+  # value of a proxy on a date: last observation up to it (the first one if none yet)
+  at <- function(p, d) {
+    x <- px[id == p]
+    if (!nrow(x)) return(NA_real_)
+    i <- findInterval(as.numeric(d), as.numeric(x$date))
+    x$value[pmax(i, 1)]
   }
-  now  <- base * sapply(ids, growth)
-  prev <- base * sapply(ids, growth, drop_last = TRUE)
+  growth <- function(a, b) sapply(ids, function(f) {
+    p <- proxy[[f]]
+    if (b <= a || !nrow(px[id == p])) return(1)
+    if (p %in% rate_proxies) {
+      grid <- sort(unique(c(a, px[id == p & date > a & date < b, date], b)))
+      prod(1 + at(p, utils::head(grid, -1)) / 100 * diff(as.numeric(grid)) / 360)
+    } else at(p, b) / at(p, a)
+  })
+  tx <- pf$transactions
+  if (length(tx) && (is.na(from) || !isTRUE(pf$values_based))) {
+    log_msg("WARN transactions need values_eur and as_of: ignored"); tx <- NULL
+  }
+  if (length(tx)) tx <- tx[order(as.Date(sapply(tx, `[[`, "date")))]
+  value_at <- function(d) {
+    v <- base; t0 <- from
+    for (t in tx) {
+      td <- as.Date(t$date)
+      if (td <= from || td > d) next
+      v <- v * growth(t0, td); t0 <- td
+      if (!is.null(t$from)) v[t$from] <- v[t$from] - t$eur
+      if (!is.null(t$to))   v[t$to]   <- v[t$to] + t$eur
+    }
+    v * growth(t0, d)
+  }
+  days <- if (is.na(from)) as.Date(character()) else sort(unique(px[date >= from, date]))
+  now  <- if (length(days)) value_at(max(days)) else base
+  prev <- if (length(days) > 1) value_at(days[length(days) - 1]) else now
   w <- 100 * now / sum(now)
   out <- data.table::data.table(fondo = ids, nombre = sapply(pf$funds[ids], `[[`, "name"),
                                 peso_estimado = unname(w), peso_objetivo = unname(tgt),

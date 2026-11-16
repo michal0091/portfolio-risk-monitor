@@ -29,11 +29,18 @@ rebalance:
 
 # Rebalance in progress (optional). While a tranche is not done the report splits the
 # deviation left among the pending tranches, replaces the out-of-band alert with the plan
-# and alerts when the next tranche is due. After each transfer: mark it done and refresh
-# values_eur and as_of. Remove the block (or leave every tranche done) when finished.
+# and alerts when the next tranche is due. After each transfer: mark it done and add the
+# movement to `transactions` (or refresh values_eur and as_of). Remove the block (or leave every tranche done) when finished.
 # rebalance_plan:
 #   start: "2026-10-27"
 #   tranches: [{date: "2026-10-30", done: true}, {date: "2026-12-15", done: false}]
+
+# Movements after as_of (optional, needs values_eur): the monitor applies them on their
+# date over the snapshot, so values_eur and as_of need no rewrite after each transfer.
+# A transfer has from and to; a contribution only `to`; a withdrawal only `from`.
+# transactions:
+#   - {date: "2026-10-30", from: world, to: groupama, eur: 500}
+#   - {date: "2026-11-05", to: world, eur: 100}
 
 # Market values in EUR on the as_of date (optional). When all four are filled they replace
 # weights_current: the monitor derives the weights from them, estimates today's value of
