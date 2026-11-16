@@ -13,7 +13,6 @@ synthetic_daily <- function(cfg, seed = 42) {
             in_win("2020-02-15", "2020-03-31") | in_win("2022-01-01", "2022-10-31")
   stress <- in_win("2008-09-01", "2009-03-31") | in_win("2020-03-01", "2020-04-30") |
             in_win("2026-10-01", "2026-12-31")
-  infl   <- in_win("2021-06-01", "2023-06-30") | in_win("2026-03-01", "2026-12-31")
 
   price <- function(mu, sig, crash_mu, start = dates[1], beta = 1) {
     r <- rnorm(n, mu / 252, sig / sqrt(252)) + ifelse(crisis, beta * crash_mu / 252, 0)

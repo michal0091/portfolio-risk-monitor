@@ -5,19 +5,16 @@ test_that("example weights are consistent", {
   expect_equal(buckets, pf$weights_target$groupama)
 })
 
-test_that("rebalance_plan transfers net to zero and land on target", {
-  reb <- rebalance_plan(pf)
-  expect_equal(sum(reb$traspaso_pp), 0)
-  expect_equal(reb$peso_actual + reb$traspaso_pp, reb$peso_objetivo)
-  expect_equal(reb$traspaso_pp_por_tramo * pf$rebalance$tranches, reb$traspaso_pp)
-})
+none <- data.table::data.table(date = as.Date(character()), id = character(), value = numeric())
 
-test_that("rebalance_plan works in euros when values_eur are given", {
-  p2 <- pf
-  p2$values_eur <- list(groupama = 3500, world = 3000, europe = 2000, em = 1500)
-  reb <- rebalance_plan(p2)
-  expect_equal(sum(reb$traspaso_eur), 0)
-  expect_equal(reb$traspaso_eur[reb$fondo == "groupama"], 1500)
+test_that("without market data fund_drift gives the transfers of the snapshot", {
+  d <- fund_drift(none, pf)
+  expect_equal(sum(d$desvio_pp), 0)
+  expect_equal(d$peso_estimado, unname(unlist(pf$weights_current)))
+  p2 <- pf; p2$values_eur <- list(groupama = 3500, world = 3000, europe = 2000, em = 1500)
+  d <- fund_drift(none, normalize_portfolio(p2))
+  expect_equal(sum(d$traspaso_eur), 0)
+  expect_equal(d[fondo == "groupama", traspaso_eur], 1500)
 })
 
 test_that("fund_drift moves weights with the proxies since as_of", {
@@ -60,7 +57,6 @@ test_that("values_eur replaces weights_current and gives EUR estimates", {
 test_that("the next tranche is the pending deviation split among the tranches not done", {
   p2 <- pf; p2$values_eur <- list(groupama = 3500, world = 3000, europe = 2000, em = 1500)
   p2 <- normalize_portfolio(p2); p2$as_of <- NULL
-  none <- data.table::data.table(date = as.Date(character()), id = character(), value = numeric())
   d0 <- fund_drift(none, p2)
   expect_equal(d0$traspaso_eur_por_tramo, d0$traspaso_eur / 2)   # no plan: rebalance$tranches
   p2$rebalance_plan <- list(start = "2026-10-27",
@@ -72,7 +68,6 @@ test_that("the next tranche is the pending deviation split among the tranches no
   expect_equal(ps$next_date, as.Date("2026-12-15"))
   d1 <- fund_drift(none, p2)
   expect_equal(d1$traspaso_eur_por_tramo, d1$traspaso_eur)        # one tranche left: all of it
-  expect_equal(rebalance_plan(p2)$traspaso_eur_por_tramo, rebalance_plan(p2)$traspaso_eur)
   p2$rebalance_plan$tranches[[2]]$done <- TRUE
   expect_false(plan_status(p2)$active)                            # finished plan = no plan
 })

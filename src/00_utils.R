@@ -68,7 +68,3 @@ last_percentile <- function(x) {
   if (!length(x)) return(NA_real_)
   100 * mean(x <= data.table::last(x))
 }
-
-fmt_pct <- function(x, digits = 1) {
-  ifelse(is.na(x), "-", formatC(x, format = "f", digits = digits, decimal.mark = ","))
-}

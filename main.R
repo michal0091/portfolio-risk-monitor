@@ -21,7 +21,7 @@ cat("\n== Escenario sugerido por las señales ==\n"); print(r$hint)
 cat("\n== Semáforo ==\n"); print(r$signals[, .(senal, valor = round(valor, 2), estado)])
 cat("\n== Escenarios (% , cartera sin emergencia) ==\n")
 print(r$scenarios[, lapply(.SD, function(x) if (is.numeric(x)) round(x, 2) else x)])
-cat("\n== Traspasos al objetivo ==\n"); print(r$rebalance)
+cat("\n== Traspasos al objetivo ==\n"); print(r$drift)
 cat("\n== Posiciones ==\n")
 print(r$positions[, .(nombre, valor_eur = round(valor_eur), resultado_eur = round(resultado_eur),
                       rentab_total_pct = round(rentab_total_pct, 1),
