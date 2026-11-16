@@ -1,0 +1,42 @@
+# Tests and an offline end-to-end run on every push and pull request. No secrets: synthetic
+# data and the example portfolio only.
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      LANG: C.UTF-8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
+
+      - uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05   # v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05   # v2
+        with:
+          cache: true
+          extra-packages: any::testthat
+
+      - name: Unit tests
+        run: Rscript -e 'testthat::test_dir("tests/testthat", stop_on_failure = TRUE)'
+
+      - name: Reports with synthetic data (dry run)
+        run: |
+          for kind in daily weekly monthly; do
+            Rscript report.R "$kind" --dry-run --synthetic
+            test -s "output/report_${kind}.html"
+          done
