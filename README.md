@@ -59,9 +59,9 @@ Rscript main.R synthetic    # demo offline con datos simulados
 
 Dependencias (en `DESCRIPTION`): `data.table`, `zoo`, `xts`, `quantmod`, `yaml`, `ggplot2`, `scales`, `httr2`, `curl` y `rugarch`; `testthat` para los tests.
 
-**Importes en euros:** si rellenas `values_eur` (los cuatro fondos) y `as_of` en `cfg/portfolio.yaml` con los importes de tu bróker en esa fecha, sustituyen a `weights_current`. El monitor estima cada día el valor de cada fondo con su proxy, y el informe muestra el valor de la cartera y su variación en euros y los traspasos al objetivo en euros por tramo. Es una estimación que se aleja poco a poco de la realidad: conviene refrescar importes y fecha de vez en cuando, por ejemplo tras cada traspaso. Sin importes, todo se calcula en puntos porcentuales.
+**Importes en euros:** si rellenas `values_eur` (los cuatro fondos) y `as_of` en `cfg/portfolio.yaml` con los importes de tu bróker en esa fecha, sustituyen a `weights_current`. El monitor estima cada día el valor de cada fondo con su proxy, y el informe muestra el valor de la cartera y su variación en euros y los traspasos al objetivo en euros por tramo. Es una estimación que se aleja poco a poco de la realidad: conviene refrescar importes y fecha de vez en cuando, por ejemplo tras cada traspaso. Sin importes, todo se calcula en puntos porcentuales. Para no reescribir importes y fecha tras cada traspaso, anota los movimientos posteriores a `as_of` en `transactions` (`{date, from, to, eur}`; una aportación solo lleva `to`, una retirada solo `from`): el monitor los aplica en su fecha sobre la foto inicial.
 
-**Plan de rebalanceo:** mientras haya un tramo sin ejecutar en `rebalance_plan` (`cfg/portfolio.yaml`, ver el ejemplo), el informe reparte el desvío pendiente entre los tramos que faltan, sustituye la alerta de banda por el plan y avisa cuando llega la fecha del siguiente tramo. Tras cada traspaso: marcar el tramo con `done: true` y actualizar `values_eur` y `as_of`. Un tramo solo incluye los fondos fuera de banda o con un importe mayor que `rebalance.min_transfer_eur`, y lo cedido es igual a lo recibido.
+**Plan de rebalanceo:** mientras haya un tramo sin ejecutar en `rebalance_plan` (`cfg/portfolio.yaml`, ver el ejemplo), el informe reparte el desvío pendiente entre los tramos que faltan, sustituye la alerta de banda por el plan y avisa cuando llega la fecha del siguiente tramo. Tras cada traspaso: marcar el tramo con `done: true` y anotar el movimiento en `transactions` (o actualizar `values_eur` y `as_of`). Un tramo solo incluye los fondos fuera de banda o con un importe mayor que `rebalance.min_transfer_eur`, y lo cedido es igual a lo recibido.
 
 **Posiciones seguidas** (`cfg/positions.yaml`): cada valor lleva su ticker de Yahoo, su divisa, la retención sobre dividendos y una lista de compras (`date`, `shares`, `price`, `fees`); una venta es una compra con títulos negativos. El monitor convierte todo a euros con los tipos de Yahoo, ajusta las compras por splits y calcula la plusvalía latente y realizada (coste medio) y los dividendos cobrados (títulos en cartera el día anterior a la fecha ex-dividendo, netos de retención). Con `strategy: core` una posición no genera alertas de movimiento, caída ni pérdida; sigue en el bloque de posiciones y en el aporte al riesgo.
 
@@ -141,7 +141,8 @@ main.R                       punto de entrada
 | `regimes_monthly.csv`, `regimes.png` | régimen mensual inflación × crédito |
 | `regime_performance.csv`, `regime_transitions.csv` | rentabilidad condicionada y matriz de transición |
 | `rebalance_plan.csv`, `glide_path.csv` | traspasos por tramo y senda del bolsillo de entrada |
-| `fund_drift.csv` | pesos (y valor en euros si hay `values_eur`) estimados hoy desde `as_of`, desvío del objetivo y traspasos |
+| `fund_drift.csv` | pesos (y valor en euros si hay `values_eur`) estimados hoy desde `as_of`, con los movimientos de `transactions` aplicados, desvío del objetivo y traspasos |
+| `freshness.csv`, `data_quality.csv` | última fecha de cada serie frente a su frecuencia (marca las que han dejado de actualizarse) y valores anómalos: los saltos aislados de más del 50 % que se deshacen al día siguiente y los valores no positivos se excluyen; las variaciones diarias recientes de más del 20 % solo se avisan |
 
 ### Proxies (verificar)
 
@@ -150,7 +151,9 @@ main.R                       punto de entrada
 | Fidelity MSCI World | `IWDA.AS` |
 | Vanguard European Stock | `VEUR.AS` |
 | Fidelity MSCI EM | `EMIM.AS` |
-| Groupama Trésorerie | €STR (FRED `ECBESTRVOLWGTTRMDRT`) |
+| Groupama Trésorerie | €STR (FRED `ECBESTRVOLWGTTRMDMNRT`) |
+
+Historia larga del bootstrap, antes de que existan los proxies: `^SP500TR` y `EEM` convertidos a euros con `DEXUSEU`, `EXSA.DE` para Europa y el Euribor a 3 meses (`IR3TIB01EZM156N`) para el efectivo. Donde no llegan, índices de precio en moneda local (`^GSPC`, `^STOXX50E`, `^KS11`). Brent y VIX toman la historia de FRED y las últimas sesiones de Yahoo (`BZ=F`, `^VIX`).
 
 Los CDS de CoreWeave u Oracle no están en Yahoo ni en FRED. Se aproximan con spreads de crédito (`BAMLH0A0HYM2`, `BAMLC0A0CM`), precios de BDC (`BIZD`, `ARCC`) y la acción de `CRWV`.
 
