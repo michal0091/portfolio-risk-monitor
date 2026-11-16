@@ -18,7 +18,21 @@ label_regimes <- function(wide, cfg) {
   cr <- w[[rg$credit_series]]
   w[, credit_med := zoo::rollapplyr(cr, rg$credit_tense_window, median, na.rm = TRUE,
                                      fill = NA, partial = 24)]
-  w[, inflation := data.table::fifelse(infl_yoy > rg$inflation_high, "Inflación alta", "Inflación baja")]
+  # Hysteresis: inflation turns "alta" above inflation_high and stays so until it falls
+  # below inflation_exit, so the regime does not flip each time it crosses one level
+  exit <- if (is.null(rg$inflation_exit)) rg$inflation_high else rg$inflation_exit
+  high <- logical(nrow(w)); state <- FALSE
+  for (i in seq_len(nrow(w))) {
+    v <- w$infl_yoy[i]
+    if (!is.na(v)) state <- if (state) v > exit else v > rg$inflation_high
+    high[i] <- state
+  }
+  w[, inflation := data.table::fifelse(high, "Inflación alta", "Inflación baja")]
+  # Second inflation series, shown in the report only (e.g. euro area HICP)
+  if (!is.null(rg$inflation_info) && rg$inflation_info %in% names(w)) {
+    idx2 <- zoo::na.approx(w[[rg$inflation_info]], na.rm = FALSE)
+    w[, infl_yoy_info := 100 * (idx2 / data.table::shift(idx2, 12) - 1)]
+  }
   w[, credit := data.table::fifelse(cr > rg$credit_tense_abs | cr > credit_med + rg$credit_tense_margin,
                                     "Crédito tensionado", "Crédito relajado")]
   w[, regime := paste(inflation, credit, sep = " · ")]
