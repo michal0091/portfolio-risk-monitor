@@ -1,6 +1,8 @@
 # Scenario and historical stress tests ---------------------------------------------
 
-scenario_table <- function(cfg, pf) {
+# w_current: current fund weights (%); the pipeline passes the fund_drift() estimate so
+# scenarios and rebalancing share one base
+scenario_table <- function(cfg, pf, w_current = pf$weights_current) {
   ret <- cfg$scenarios$returns
   sc  <- names(cfg$scenarios$probabilities)
   fund_ids <- c("groupama", "world", "europe", "em")
@@ -18,7 +20,7 @@ scenario_table <- function(cfg, pf) {
     sum(sl * sapply(names(sl), function(k) ret[[k]][[s]])) / sum(sl)
   }
   rows <- lapply(sc, function(s) {
-    cur <- port_ret(pf$weights_current, s); tgt <- port_ret(pf$weights_target, s)
+    cur <- port_ret(w_current, s); tgt <- port_ret(pf$weights_target, s)
     ppr <- pp_ret(s)
     # combined investable wealth = fund portfolio ex-emergency + pension plan
     inv_f <- (1 - share_pp) * (100 - emergency) / 100

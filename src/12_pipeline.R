@@ -25,7 +25,8 @@ run_pipeline <- function(cfg, pf, pos, charts = TRUE, forecast = "full") {
   fw(regime_transitions(w), "regime_transitions.csv")
 
   # 3. Stress
-  sc <- scenario_table(cfg, pf)
+  drift <- fund_drift(daily, pf)
+  sc <- scenario_table(cfg, pf, stats::setNames(as.list(drift$peso_estimado), drift$fondo))
   ph <- portfolio_history(daily, pf)
   fw(sc, "scenarios.csv")
   fw(equity_share_grid(cfg, pf), "equity_share_grid.csv")
@@ -41,7 +42,6 @@ run_pipeline <- function(cfg, pf, pos, charts = TRUE, forecast = "full") {
   # 5. Rebalance
   reb <- rebalance_plan(pf)
   fw(reb, "rebalance_plan.csv")
-  drift <- fund_drift(daily, pf)
   fw(drift, "fund_drift.csv")
   fw(glide_path(pf), "glide_path.csv")
 

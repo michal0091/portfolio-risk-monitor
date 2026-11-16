@@ -25,3 +25,9 @@ test_that("portfolio_history tracks a single asset exactly whatever the rebalanc
     expect_equal(ph$valor, 100 * px / px[1])
   }
 })
+
+test_that("scenario_table takes the current weights it is given", {
+  w <- list(groupama = 25, world = 75, europe = 0, em = 0)       # 25 = emergency: all world left
+  sc <- scenario_table(cfg, pf, w)
+  expect_equal(sc[scenario == "A", fondos_actual], cfg$scenarios$returns$world$A)
+})
