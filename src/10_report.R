@@ -58,7 +58,8 @@ section_signals <- function(r, prev, full = FALSE) {
   sig[, dist := signal_distance(sig)]
   n <- table(factor(sig$estado, levels = names(status_icon)))
   lines <- c(paste0("<b>Semáforo</b>  ", paste(status_icon[names(n)], n, collapse = "  ")),
-             paste0("Escenario más coherente: ", html_escape(r$hint$escenario_probable)))
+             paste0("Escenario más coherente: ", html_escape(r$hint$escenario_probable)),
+             if (!is.null(r$hint$motivo)) paste0("<i>Por: ", html_escape(r$hint$motivo), "</i>"))
   show <- if (full) sig else sig[estado != "Verde"]
   show <- show[order(-match(estado, names(status_icon)))]
   if (nrow(show)) lines <- c(lines, paste0(
@@ -125,7 +126,8 @@ section_funds <- function(r) {
     m <- d[which.max(abs(desvio_pp))]
     lines <- c(lines, paste0("Mayor desvío del objetivo: ", html_escape(m$nombre), " ",
                              fmt_signed(m$desvio_pp, 1, " pp"),
-                             if (any(d$fuera_de_banda)) " (fuera de banda)" else " (dentro de banda)"))
+                             if (plan_status(r$pf)$active) paste0(" (", plan_label(r$pf), ")")
+                             else if (any(d$fuera_de_banda)) " (fuera de banda)" else " (dentro de banda)"))
   }
   paste(lines, collapse = "\n")
 }
@@ -165,15 +167,25 @@ section_positions <- function(r, full = FALSE) {
   paste(lines, collapse = "\n")
 }
 
-# Personal alerts: unusual daily move (GARCH), fall from the high since purchase, price
-# below the average purchase price, fund portfolio outside its rebalancing band.
+# "Plan en curso: tramo 2 de 2 previsto el 15/12/2026"
+plan_label <- function(pf) {
+  ps <- plan_status(pf)
+  paste0("plan en curso: tramo ", ps$next_n, " de ", ps$total,
+         if (is.na(ps$next_date)) "" else paste0(" previsto el ", format(ps$next_date, "%d/%m/%Y")))
+}
+
+# Personal alerts: unusual daily move (GARCH), fall from the high since purchase, total
+# return (dividends and sales included) below -total_loss %, fund portfolio outside its
+# rebalancing band. Positions with strategy "core" raise none of the price alerts. While a
+# rebalance plan is active the band alert is replaced by one when the next tranche is due.
 # Returns clave (for "nueva" tagging against the previous run) and text.
-build_alerts <- function(r) {
+build_alerts <- function(r, today = Sys.Date()) {
   a <- r$cfg$report$alerts
   empty <- data.table::data.table(grupo = character(), clave = character(), texto = character())
   if (is.null(a)) return(empty)
   out <- list()
   s <- r$positions[id != "total" & titulos > 0]
+  if ("estrategia" %in% names(s)) s <- s[is.na(estrategia) | estrategia != "core"]
   g <- r$forecast$garch$table
   if (!is.null(g) && nrow(g) && nrow(s)) {
     z <- g[id %in% s$id & abs(z_ultimo) > a$z_move][s, on = "id", nomatch = 0]
@@ -187,16 +199,21 @@ build_alerts <- function(r) {
     if (nrow(dd)) out$dd <- data.table::data.table(
       grupo = dd$nombre, clave = paste0("dd|", dd$id),
       texto = paste0(fmt_signed(-dd$caida_max_pct), " desde su máximo desde la compra"))
-    if (isTRUE(a$below_cost)) {
-      bc <- s[!is.na(precio_medio_eur) & valor_eur / titulos < precio_medio_eur]
+    if (!is.null(a$total_loss)) {
+      bc <- s[!is.na(rentab_total_pct) & rentab_total_pct < -a$total_loss]
       if (nrow(bc)) out$bc <- data.table::data.table(
-        grupo = bc$nombre, clave = paste0("coste|", bc$id),
-        texto = paste0("por debajo de su precio medio de compra (", fmt_num(bc$valor_eur / bc$titulos, 2),
-                       " € frente a ", fmt_num(bc$precio_medio_eur, 2), " €)"))
+        grupo = bc$nombre, clave = paste0("perdida|", bc$id),
+        texto = paste0("resultado total ", fmt_signed(bc$rentab_total_pct), " (dividendos incluidos)"))
     }
   }
   d <- r$drift
-  if (!is.null(d) && any(d$fuera_de_banda)) {
+  ps <- plan_status(r$pf)
+  if (ps$active) {
+    if (!is.na(ps$next_date) && ps$next_date <= today) out$plan <- data.table::data.table(
+      grupo = "Rebalanceo", clave = paste0("plan|", format(ps$next_date)),
+      texto = paste0("tramo ", ps$next_n, " de ", ps$total, " del plan previsto el ",
+                     format(ps$next_date, "%d/%m/%Y"), ": toca ejecutarlo"))
+  } else if (!is.null(d) && any(d$fuera_de_banda)) {
     fb <- d[fuera_de_banda == TRUE]
     out$band <- data.table::data.table(
       grupo = fb$nombre, clave = paste0("banda|", fb$fondo),
@@ -254,8 +271,11 @@ section_regime <- function(r) {
 }
 
 section_scenarios <- function(r) {
-  sc <- r$scenarios
-  paste(c("<b>Escenarios</b> (fondos objetivo · conjunto con plan)",
+  sc <- r$scenarios[scenario != "Esperado"]   # probability-weighted row: judgement, CSV only
+  rev <- r$cfg$scenarios$reviewed
+  paste(c(paste0("<b>Escenarios</b> (fondos objetivo sin fondo de emergencia · conjunto con plan)",
+                 if (is.null(rev)) "" else paste0("\n<i>Supuestos revisados el ",
+                                                  format(as.Date(rev), "%d/%m/%Y"), "</i>")),
           paste0(sc$scenario, ": ", fmt_signed(sc$fondos_objetivo), " · ",
                  fmt_signed(sc$conjunto_objetivo))), collapse = "\n")
 }
@@ -270,13 +290,16 @@ section_rebalance <- function(r) {
                   fmt_num(d$peso_objetivo, 1), " %, ", fmt_signed(d$desvio_pp, 1, " pp"), ")",
                   if (eur) paste0(" · ", fmt_eur(d$valor_estimado_eur)) else "",
                   ifelse(d$fuera_de_banda, " <b>fuera de banda</b>", ""))
-  if (any(d$fuera_de_banda)) {
-    tr <- d[abs(desvio_pp) > 0.05]
-    lines <- c(lines, if (eur) paste0("Traspasos al objetivo, por tramo (", r$pf$rebalance$tranches, " tramos): ",
-                                       paste0(html_escape(tr$nombre), ifelse(tr$traspaso_eur > 0, " recibe ", " cede "),
-                                              fmt_eur(abs(tr$traspaso_eur_por_tramo)), collapse = " · "))
-               else paste0("Traspasos al objetivo: ", paste0(html_escape(tr$nombre), " ",
-                                                            fmt_signed(-tr$desvio_pp, 1, " pp"), collapse = " · ")))
+  ps <- plan_status(r$pf)
+  if (ps$active || any(d$fuera_de_banda)) {
+    tr <- tranche_transfers(d, r$pf)
+    what <- if (ps$active) paste0("Plan en curso, tramo ", ps$next_n, " de ", ps$total,
+                                  if (is.na(ps$next_date)) "" else paste0(" (previsto el ", format(ps$next_date, "%d/%m/%Y"), ")"))
+            else paste0("Traspasos al objetivo, tramo 1 de ", ps$total)
+    lines <- c(lines, if (!nrow(tr)) paste0(what, ": sin traspasos por encima del mínimo")
+               else paste0(what, ": ", paste0(html_escape(tr$nombre), ifelse(tr$importe > 0, " recibe ", " cede "),
+                                              if (eur) fmt_eur(abs(tr$importe)) else paste0(fmt_num(abs(tr$importe), 1), " pp"),
+                                              collapse = " · ")))
   } else lines <- c(lines, "Todos los fondos dentro de banda")
   paste(c(head, lines), collapse = "\n")
 }
@@ -300,8 +323,8 @@ section_garch <- function(r, full = FALSE) {
   g <- data.table::copy(g)
   g[, valor := garch_values(r, g)]
   g[, serie := data.table::fcase(
-    id == "Cartera actual", "Cartera de fondos (actual)",
-    id == "Cartera objetivo", "Cartera de fondos (objetivo)", default = serie)]
+    id == "Cartera actual", "Cartera de fondos (actual, con fondo de emergencia)",
+    id == "Cartera objetivo", "Cartera de fondos (objetivo, con fondo de emergencia)", default = serie)]
   world <- g[id == "ref_world", vol_anual_pct]
   spx <- g[id == "ref_spx"]
   g <- g[id != "ref_spx"]
@@ -354,21 +377,30 @@ section_bootstrap <- function(r) {
   s <- b$summary[horizonte_meses %in% c(12, 24)]
   s <- data.table::dcast(s, cartera ~ horizonte_meses, value.var = c("prob_caida", "rentab_p05"))
   s <- s[order(prob_caida_24)]                        # from lower to higher risk
+  inv <- "Cartera invertible (objetivo)"
   paste(c(paste0("<b>Riesgo de caída</b> (bootstrap, régimen: ", html_escape(b$regime), ")"),
-          paste0("• ", html_escape(s$cartera), ": P(caída &gt; ", r$forecast_loss, " %) ",
+          paste0("• ", html_escape(s$cartera), ": P(caída máxima &gt; ", r$forecast_loss, " % en algún momento) ",
                  fmt_num(s$prob_caida_12, 1), " % a 12 m · ", fmt_num(s$prob_caida_24, 1),
-                 " % a 24 m · peor 5 % a 24 m ", fmt_signed(s$rentab_p05_24))), collapse = "\n")
+                 " % a 24 m · rentabilidad final a 24 m, percentil 5: ", fmt_signed(s$rentab_p05_24)),
+          paste0("<i>Cartera actual y objetivo incluyen el fondo de emergencia",
+                 if (inv %in% s$cartera) paste0("; la tolerancia del -", r$forecast_loss,
+                                                " % se compara con la cartera invertible") else "", "</i>")),
+        collapse = "\n")
 }
 
+logit_useful <- function(m) !is.na(m$auc_oos) && m$auc_oos > .6 && m$brier_oos < m$brier_clima
+
+# The probability is published only when the model beats the historical frequency out of sample
 section_logit <- function(r) {
   m <- r$forecast$logit$metrics
   if (is.null(m)) return(NULL)
-  useful <- !is.na(m$auc_oos) && m$auc_oos > .6 && m$brier_oos < m$brier_clima
+  if (!logit_useful(m)) return(paste0(
+    "<b>Alerta temprana (logit)</b>\nModelo sin capacidad predictiva fuera de muestra (AUC ",
+    fmt_num(m$auc_oos, 2), "): no se publica la probabilidad"))
   paste0("<b>Alerta temprana (logit)</b>\nP(caída fuerte de la bolsa en 6 meses): ",
          fmt_num(m$prob_actual, 1), " %\nFuera de muestra: AUC ", fmt_num(m$auc_oos, 2),
          " · Brier ", fmt_num(m$brier_oos, 3), " (frecuencia histórica ", fmt_num(m$brier_clima, 3),
-         ", ", m$eventos_oos, " meses con caída)",
-         if (!useful) "\n<i>Sin capacidad predictiva fuera de muestra: tomar solo como referencia</i>" else "")
+         ", ", m$eventos_oos, " meses con caída)")
 }
 
 section_capm <- function(r) {

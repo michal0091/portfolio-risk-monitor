@@ -88,6 +88,7 @@ signals:
 # ---------------------------------------------------------------------------
 scenarios:
   names: {A: "Desinflado ordenado IA", B: "Estanflación + crédito", C: "Crash deflacionario", D: "Aterrizaje suave"}
+  reviewed: "2026-10-27"        # date of the judgement below; shown in the report
   probabilities: {A: 0.40, B: 0.25, C: 0.20, D: 0.15}
   returns:
     groupama:  {A: 2.5,  B: 3.0,  C: 1.5,  D: 2.5}
@@ -151,4 +152,4 @@ report:
   alerts:
     z_move: 2                   # daily move beyond 2 conditional standard deviations (GARCH)
     drawdown: 10                # % fall of a position from its high since purchase
-    below_cost: true            # price below the average purchase price
+    total_loss: 10              # % loss on the amount invested, dividends and sales included

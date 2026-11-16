@@ -74,17 +74,51 @@ test_that("alerts group by position and mark new conditions", {
   r <- list(cfg = cfg, pf = pf,
             positions = data.table::data.table(
               id = c("a", "b", "total"), nombre = c("A", "B", "Total"), titulos = c(10, 5, NA),
-              valor_eur = c(80, 500, 580), precio_medio_eur = c(10, 90, NA),
+              valor_eur = c(80, 500, 580), rentab_total_pct = c(-20, -3, NA),
+              estrategia = c("tactical", "tactical", NA),
               caida_max_pct = c(25, 2, NA), var_dia_pct = c(-6, 1, NA)),
             forecast = list(garch = list(table = data.table::data.table(id = c("a", "b"),
                                                                          z_ultimo = c(-3.1, 0.4)))),
             drift = data.table::data.table(fondo = "x", nombre = "Fondo X", desvio_pp = 1,
                                            fuera_de_banda = FALSE, desde = as.Date(NA)))
   al <- build_alerts(r)
-  expect_setequal(al$clave, c("mov|a", "dd|a", "coste|a"))
-  txt <- section_alerts(al, data.table::data.table(clave = c("dd|a", "coste|a")))
+  expect_setequal(al$clave, c("mov|a", "dd|a", "perdida|a"))
+  txt <- section_alerts(al, data.table::data.table(clave = c("dd|a", "perdida|a")))
   expect_equal(length(strsplit(txt, "\n")[[1]]), 2)               # title + one line for A
   expect_match(txt, "movimiento inusual\\) <b>\\(nueva\\)</b>")
   r2 <- r; r2$positions <- r$positions[id != "a"]
   expect_null(section_alerts(build_alerts(r2)))
+  # a small loss (B, -3 %) is no alert; a core position raises no price alert at all
+  r3 <- r; r3$positions <- data.table::copy(r$positions)[id == "a", estrategia := "core"]
+  expect_equal(nrow(build_alerts(r3)), 0)
+})
+
+test_that("an active rebalance plan replaces the band alert", {
+  r <- list(cfg = cfg, pf = pf, positions = data.table::data.table(id = character(), titulos = numeric()),
+            drift = data.table::data.table(fondo = "x", nombre = "Fondo X", desvio_pp = 7,
+                                           fuera_de_banda = TRUE, desde = as.Date(NA)))
+  expect_equal(build_alerts(r)$clave, "banda|x")
+  r$pf$rebalance_plan <- list(tranches = list(list(date = "2026-10-30", done = TRUE),
+                                              list(date = "2026-12-15", done = FALSE)))
+  expect_equal(nrow(build_alerts(r, today = as.Date("2026-11-16"))), 0)
+  expect_equal(build_alerts(r, today = as.Date("2026-12-15"))$clave, "plan|2026-12-15")   # tranche due
+  expect_equal(plan_label(r$pf), "plan en curso: tramo 2 de 2 previsto el 15/12/2026")
+})
+
+test_that("the logit probability is not published when the model is not useful", {
+  m <- data.table::data.table(auc_oos = .39, brier_oos = .09, brier_clima = .08, prob_actual = 16.4,
+                              eventos_oos = 24)
+  txt <- section_logit(list(forecast = list(logit = list(metrics = m))))
+  expect_match(txt, "AUC 0,39")
+  expect_false(grepl("16,4", txt))
+  m[, `:=`(auc_oos = .7, brier_oos = .07)]
+  expect_match(section_logit(list(forecast = list(logit = list(metrics = m)))), "16,4 %")
+})
+
+test_that("the scenario section leaves out the probability-weighted row", {
+  sc <- scenario_table(cfg, pf)
+  txt <- section_scenarios(list(scenarios = sc, cfg = cfg))
+  expect_false(grepl("Esperado", txt))
+  expect_match(txt, "Supuestos revisados el")
+  expect_true("Esperado" %in% sc$scenario)                       # still in scenarios.csv
 })
