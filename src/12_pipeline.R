@@ -14,7 +14,13 @@ run_pipeline <- function(cfg, pf, pos, charts = TRUE, forecast = "full") {
   } else {
     download_all(cfg)
   }
+  series <- c(cfg$yahoo, cfg$fred)
+  q <- validate_daily(daily, sapply(cfg$yahoo, `[[`, "id"))
+  daily <- q$daily
   data.table::fwrite(daily, file.path(cfg$project$data_processed, "daily.csv"))
+  checked <- sapply(Filter(function(s) !isTRUE(s$history), series), `[[`, "id")
+  lags <- unlist(lapply(series, function(s) if (!is.null(s$max_lag_days)) stats::setNames(s$max_lag_days, s$id)))
+  fresh <- freshness_table(daily, checked, max_lag = lags)
 
   # 2. Regimes
   w <- label_regimes(build_monthly(daily), cfg)
@@ -25,8 +31,13 @@ run_pipeline <- function(cfg, pf, pos, charts = TRUE, forecast = "full") {
   fw(regime_transitions(w), "regime_transitions.csv")
 
   # 3. Stress
+  # From here on the "current" portfolio is today's estimate (snapshot drifted with the
+  # proxies, transactions applied), the same base for scenarios, simulations and rebalancing
   drift <- fund_drift(daily, pf)
-  sc <- scenario_table(cfg, pf, stats::setNames(as.list(drift$peso_estimado), drift$fondo))
+  pf_in <- pf
+  pf$weights_current <- stats::setNames(as.list(drift$peso_estimado), drift$fondo)
+  if ("valor_estimado_eur" %in% names(drift)) pf$values_eur <- stats::setNames(as.list(drift$valor_estimado_eur), drift$fondo)
+  sc <- scenario_table(cfg, pf)
   ph <- portfolio_history(daily, pf)
   fw(sc, "scenarios.csv")
   fw(equity_share_grid(cfg, pf), "equity_share_grid.csv")
@@ -47,6 +58,15 @@ run_pipeline <- function(cfg, pf, pos, charts = TRUE, forecast = "full") {
 
   # 6. Tracked positions
   pdata <- if (synthetic) synthetic_positions(pos, from = history_start(pos, cfg)) else download_positions(pos, cfg)
+  qp <- validate_daily(pdata, unique(grep("^px_", pdata$id, value = TRUE)))
+  pdata <- qp$daily
+  quality <- rbind(q$issues, qp$issues)
+  fresh <- rbind(fresh, freshness_table(pdata, unique(grep("^(px|fx)_", pdata$id, value = TRUE))))
+  fw(quality, "data_quality.csv")
+  fw(fresh, "freshness.csv")
+  if (nrow(quality)) log_msg("WARN data quality: ", sum(quality$excluido), " values excluded, ",
+                             sum(!quality$excluido), " to check (output/data_quality.csv)")
+  if (any(fresh$desfasada)) log_msg("WARN ", sum(fresh$desfasada), " series not updating (output/freshness.csv)")
   pos_hist <- position_history(pos, pdata)
   pos_sum  <- position_summary(pos, pdata, pos_hist)
   pos_px   <- position_prices(pos, pdata)
@@ -83,7 +103,7 @@ run_pipeline <- function(cfg, pf, pos, charts = TRUE, forecast = "full") {
     if (!is.null(fc$garch) && nrow(fc$garch$vol)) invisible(plot_garch(fc$garch$vol, file = file.path(out, "garch.png")))
   }
 
-  list(cfg = cfg, pf = pf, daily = daily, regimes = w, drift = drift, scenarios = sc, portfolio = ph, signals = sig,
+  list(cfg = cfg, pf = pf_in, quality = quality, freshness = fresh, daily = daily, regimes = w, drift = drift, scenarios = sc, portfolio = ph, signals = sig,
        hint = hint, rebalance = reb, positions = pos_sum, positions_history = pos_hist,
        dividends = divs, forecast = fc, forecast_loss = cfg$forecast$bootstrap$loss, stale = c(attr(daily, "stale"), attr(pdata, "stale")))
 }

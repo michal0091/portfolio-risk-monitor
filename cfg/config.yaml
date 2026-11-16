@@ -12,6 +12,7 @@ project:
 # ---------------------------------------------------------------------------
 # Market data (Yahoo Finance via quantmod::getSymbols, src = "yahoo")
 # role: proxy = stands in for a fund in the portfolio; monitor = early-warning only
+#       history = long total-return history for the bootstrap only
 # NOTE: verify tickers before first run; Yahoo symbols change occasionally.
 # ---------------------------------------------------------------------------
 yahoo:
@@ -19,6 +20,9 @@ yahoo:
   - {id: europe,   ticker: "VEUR.AS",   role: proxy,   desc: "Vanguard FTSE Dev. Europe (EUR) - proxy Vanguard European Stock"}
   - {id: em,       ticker: "EMIM.AS",   role: proxy,   desc: "iShares Core MSCI EM IMI (EUR) - proxy Fidelity MSCI EM"}
   - {id: spx,      ticker: "^GSPC",     role: monitor, desc: "S&P 500 (long history for regimes)"}
+  - {id: spx_tr,   ticker: "^SP500TR",  role: history, desc: "S&P 500 total return, USD (world before the proxy, from 1988)"}
+  - {id: europe_tr, ticker: "EXSA.DE",  role: history, desc: "iShares STOXX Europe 600, EUR, dividends included (Europe before the proxy, from 2008)"}
+  - {id: em_tr,    ticker: "EEM",       role: history, desc: "iShares MSCI EM, USD, dividends included (EM before the proxy, from 2003)"}
   - {id: stoxx50,  ticker: "^STOXX50E", role: monitor, desc: "EuroStoxx 50"}
   - {id: ibex,     ticker: "^IBEX",     role: monitor, desc: "IBEX 35"}
   - {id: eurusd_fx, ticker: "EURUSD=X", role: monitor, desc: "USD per EUR (daily, fresher than FRED DEXUSEU)"}
@@ -34,6 +38,9 @@ yahoo:
 
 # ---------------------------------------------------------------------------
 # Macro & credit (FRED via quantmod::getSymbols, src = "FRED"; no API key needed)
+# recent: Yahoo ticker for the sessions FRED has not published yet
+# max_lag_days: days without a new value before the report flags the series (default by
+# frequency: 6 daily, 16 weekly, 100 monthly); history: true = never flagged
 # ---------------------------------------------------------------------------
 fred:
   - {id: hy_oas,     code: "BAMLH0A0HYM2",          desc: "US High Yield OAS (%)"}
@@ -44,14 +51,15 @@ fred:
   - {id: ust2,       code: "DGS2",                  desc: "US 2y Treasury yield (%)"}
   - {id: tips10,     code: "DFII10",                desc: "US 10y real yield (%)"}
   - {id: bei10,      code: "T10YIE",                desc: "US 10y breakeven inflation (%)"}
-  - {id: brent,      code: "DCOILBRENTEU",          desc: "Brent (USD/bbl)"}
+  - {id: brent,      code: "DCOILBRENTEU",          recent: "BZ=F", desc: "Brent (USD/bbl); latest sessions from the Yahoo future"}
   - {id: nfci,       code: "NFCI",                  desc: "Chicago Fed financial conditions"}
   - {id: stlfsi,     code: "STLFSI4",               desc: "St. Louis Fed financial stress"}
-  - {id: vix,        code: "VIXCLS",                desc: "VIX"}
+  - {id: vix,        code: "VIXCLS",                recent: "^VIX", desc: "VIX; latest sessions from Yahoo"}
   - {id: us_cpi,     code: "CPIAUCSL",              desc: "US CPI index"}
   - {id: ea_hicp,    code: "CP0000EZ19M086NEST",    desc: "Euro area HICP index"}
   - {id: estr,       code: "ECBESTRVOLWGTTRMDMNRT", desc: "EUR short-term rate (%) - proxy Groupama"}
-  - {id: eurusd,     code: "DEXUSEU",               desc: "USD per EUR"}
+  - {id: eurusd,     code: "DEXUSEU",               max_lag_days: 12, desc: "USD per EUR (from 1999: long history in EUR)"}
+  - {id: euribor3m,  code: "IR3TIB01EZM156N",       history: true, desc: "3-month Euribor (%), EUR cash before the €STR (history only: not checked for freshness)"}
 
 # ---------------------------------------------------------------------------
 # Regime definition (monthly)
@@ -111,7 +119,7 @@ stress_windows:
 # Forecasting (src/09_forecast.R)
 # ---------------------------------------------------------------------------
 forecast:
-  cash_fallback_pct: 2.0        # EUR cash return (% a year) before the €STR series starts (2019)
+  cash_fallback_pct: 2.0        # EUR cash return (% a year) when neither €STR nor Euribor has data
   bootstrap:                    # block bootstrap of monthly returns within the current regime
     n_paths: 10000
     horizon: 24                 # months

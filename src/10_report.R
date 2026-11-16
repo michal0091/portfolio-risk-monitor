@@ -258,9 +258,27 @@ section_dividends <- function(nd) {
                  fmt_num(nd$neto_eur, 2), " € netos")), collapse = "\n")
 }
 
+# Data warnings: failed downloads (cache used), series that stopped updating, values
+# removed as bad ticks and large moves to check
 section_stale <- function(r) {
-  if (!length(r$stale)) return(NULL)
-  paste0("⚠️ Sin datos nuevos (se usa la caché): ", html_escape(paste(r$stale, collapse = ", ")))
+  out <- character()
+  if (length(r$stale)) out <- c(out, paste0("⚠️ Sin datos nuevos (se usa la caché): ",
+                                            html_escape(paste(r$stale, collapse = ", "))))
+  f <- r$freshness
+  if (!is.null(f) && any(f$desfasada)) {
+    f <- f[desfasada == TRUE]
+    out <- c(out, paste0("⚠️ Series sin actualizar: ", paste0(
+      html_escape(f$id), " (último dato ", format(f$ultima_fecha, "%d/%m/%Y"), ")", collapse = ", ")))
+  }
+  q <- r$quality
+  if (!is.null(q) && nrow(q)) {
+    item <- function(x) paste0(html_escape(x$id), " ", format(x$date, "%d/%m/%Y"), collapse = ", ")
+    if (any(q$excluido)) out <- c(out, paste0("⚠️ Datos anómalos excluidos: ", item(q[excluido == TRUE])))
+    if (any(!q$excluido)) out <- c(out, paste0("⚠️ Variaciones diarias de más del 20 % (comprobar): ",
+                                               item(q[excluido == FALSE])))
+  }
+  if (!length(out)) return(NULL)
+  paste(out, collapse = "\n")
 }
 
 section_regime <- function(r) {
@@ -378,7 +396,9 @@ section_bootstrap <- function(r) {
   s <- data.table::dcast(s, cartera ~ horizonte_meses, value.var = c("prob_caida", "rentab_p05"))
   s <- s[order(prob_caida_24)]                        # from lower to higher risk
   inv <- "Cartera invertible (objetivo)"
-  paste(c(paste0("<b>Riesgo de caída</b> (bootstrap, régimen: ", html_escape(b$regime), ")"),
+  paste(c(paste0("<b>Riesgo de caída</b> (bootstrap, régimen: ", html_escape(b$regime),
+                 if (is.null(b$months)) "" else paste0("; muestra de ", b$months, " meses, ", b$blocks,
+                                                       " bloques independientes"), ")"),
           paste0("• ", html_escape(s$cartera), ": P(caída máxima &gt; ", r$forecast_loss, " % en algún momento) ",
                  fmt_num(s$prob_caida_12, 1), " % a 12 m · ", fmt_num(s$prob_caida_24, 1),
                  " % a 24 m · rentabilidad final a 24 m, percentil 5: ", fmt_signed(s$rentab_p05_24)),
