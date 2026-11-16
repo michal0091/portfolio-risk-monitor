@@ -3,7 +3,38 @@
 # returns euro amounts. Traspasos between funds are tax-free in Spain: always transfer,
 # never redeem and subscribe.
 
-rebalance_plan <- function(pf, tranches = pf$rebalance$tranches) {
+# State of the tranche plan in pf$rebalance_plan (start, tranches: [{date, done}]).
+# Active while a tranche is not done; the deviation left is then split among the pending
+# tranches only. Without a plan a new rebalance is split in pf$rebalance$tranches.
+plan_status <- function(pf) {
+  tr <- pf$rebalance_plan$tranches
+  done <- vapply(tr, function(t) isTRUE(t$done), logical(1))
+  if (!length(tr) || all(done)) {
+    n <- if (is.null(pf$rebalance$tranches)) 1 else pf$rebalance$tranches
+    return(list(active = FALSE, pending = n, total = n, next_n = 1, next_date = as.Date(NA)))
+  }
+  nxt <- which(!done)[1]
+  list(active = TRUE, pending = sum(!done), total = length(tr), next_n = nxt,
+       next_date = if (is.null(tr[[nxt]]$date)) as.Date(NA) else as.Date(tr[[nxt]]$date))
+}
+
+# Transfers of the next tranche: only funds outside their band or above the minimum
+# amount (pf$rebalance$min_transfer_eur, or 0.5 pp when working in percentages), scaled
+# so that what is given equals what is received. d: fund_drift() output.
+tranche_transfers <- function(d, pf) {
+  eur <- "traspaso_eur_por_tramo" %in% names(d)
+  x <- d[, .(fondo, nombre, fuera_de_banda,
+             importe = if (eur) traspaso_eur_por_tramo else -desvio_pp / plan_status(pf)$pending)]
+  min_t <- if (!eur) 0.5 else if (is.null(pf$rebalance$min_transfer_eur)) 100 else pf$rebalance$min_transfer_eur
+  x <- x[fuera_de_banda | abs(importe) >= min_t]
+  inn <- x[importe > 0, sum(importe)]; out <- x[importe < 0, -sum(importe)]
+  if (inn == 0 || out == 0) return(x[0, .(fondo, nombre, importe)])
+  x[importe > 0, importe := importe * min(inn, out) / inn]
+  x[importe < 0, importe := importe * min(inn, out) / out]
+  x[, .(fondo, nombre, importe)]
+}
+
+rebalance_plan <- function(pf, tranches = plan_status(pf)$pending) {
   ids <- names(pf$weights_target)
   vals <- unlist(lapply(pf$values_eur[ids], function(v) if (is.null(v)) NA_real_ else v))
   has_eur <- all(!is.na(vals))
@@ -73,7 +104,7 @@ fund_drift <- function(daily, pf, rate_proxies = "estr") {
     out[, `:=`(valor_estimado_eur = unname(now), valor_previo_eur = unname(prev),
                traspaso_eur = (peso_objetivo - peso_estimado) / 100 * total,
                traspaso_eur_por_tramo = (peso_objetivo - peso_estimado) / 100 * total /
-                 pf$rebalance$tranches)]
+                 plan_status(pf)$pending)]
   }
   out[]
 }

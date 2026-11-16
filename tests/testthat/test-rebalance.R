@@ -56,3 +56,37 @@ test_that("values_eur replaces weights_current and gives EUR estimates", {
   expect_equal(sum(d$traspaso_eur), 0)
   expect_equal(d[fondo == "groupama", traspaso_eur], (pf$weights_target$groupama / 100) * total - 5000)
 })
+
+test_that("the next tranche is the pending deviation split among the tranches not done", {
+  p2 <- pf; p2$values_eur <- list(groupama = 3500, world = 3000, europe = 2000, em = 1500)
+  p2 <- normalize_portfolio(p2); p2$as_of <- NULL
+  none <- data.table::data.table(date = as.Date(character()), id = character(), value = numeric())
+  d0 <- fund_drift(none, p2)
+  expect_equal(d0$traspaso_eur_por_tramo, d0$traspaso_eur / 2)   # no plan: rebalance$tranches
+  p2$rebalance_plan <- list(start = "2026-10-27",
+                            tranches = list(list(date = "2026-10-30", done = TRUE),
+                                            list(date = "2026-12-15", done = FALSE)))
+  ps <- plan_status(p2)
+  expect_true(ps$active)
+  expect_equal(c(ps$pending, ps$next_n, ps$total), c(1, 2, 2))
+  expect_equal(ps$next_date, as.Date("2026-12-15"))
+  d1 <- fund_drift(none, p2)
+  expect_equal(d1$traspaso_eur_por_tramo, d1$traspaso_eur)        # one tranche left: all of it
+  expect_equal(rebalance_plan(p2)$traspaso_eur_por_tramo, rebalance_plan(p2)$traspaso_eur)
+  p2$rebalance_plan$tranches[[2]]$done <- TRUE
+  expect_false(plan_status(p2)$active)                            # finished plan = no plan
+})
+
+test_that("tranche transfers skip small in-band amounts and net to zero", {
+  d <- data.table::data.table(fondo = c("g", "w", "e", "m"), nombre = c("G", "W", "E", "M"),
+                              desvio_pp = c(-7, 4, 0.3, 2.7), fuera_de_banda = c(TRUE, FALSE, FALSE, FALSE),
+                              traspaso_eur_por_tramo = c(1041, -600, -42, -399))
+  tr <- tranche_transfers(d, pf)
+  expect_equal(tr$fondo, c("g", "w", "m"))                        # 42 EUR inside the band: left out
+  expect_equal(sum(tr$importe), 0)
+  expect_equal(tr[fondo == "g", importe], 999)                    # scaled to what the others give
+  p2 <- pf; p2$rebalance$min_transfer_eur <- 500
+  expect_equal(tranche_transfers(d, p2)$fondo, c("g", "w"))
+  d[, traspaso_eur_por_tramo := NULL]                             # percentages only
+  expect_equal(sum(tranche_transfers(d, pf)$importe), 0)
+})
